@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Admin Panel – STS</title>
+<link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body class="dashboard-body">
+
+<!-- TOP NAV -->
+<nav class="topnav">
+  <div class="nav-left">
+    <span class="nav-logo">🚌</span>
+    <span id="nav-school-name" class="nav-title">School Transport System</span>
+  </div>
+  <div class="nav-right">
+    <span id="nav-user" class="nav-user"></span>
+    <span id="nav-role" class="badge-role"></span>
+    <button class="btn-outline-sm" onclick="logout()">Logout</button>
+  </div>
+</nav>
+
+<!-- SIDEBAR + CONTENT -->
+<div class="dashboard-layout">
+  <aside class="sidebar">
+    <ul class="nav-menu">
+      <li class="nav-item active" onclick="showSection('roster')">📋 Roster</li>
+      <li class="nav-item" onclick="showSection('teachers')">👩‍🏫 Teachers</li>
+      <li class="nav-item" onclick="showSection('routes')">🗺️ Routes</li>
+      <li class="nav-item" onclick="showSection('logs')">📝 Logs</li>
+      <li class="nav-item" onclick="showSection('admins')">🔑 Admins</li>
+      <li class="nav-item" onclick="showSection('settings')">⚙️ Settings</li>
+    </ul>
+  </aside>
+
+  <main class="main-content">
+
+    <!-- ── ROSTER ── -->
+    <section id="section-roster" class="section active">
+      <div class="section-header">
+        <h2>Daily Duty Roster</h2>
+        <div class="header-actions">
+          <input type="date" id="roster-date" class="date-input"/>
+          <button class="btn-primary" onclick="generateRoster()">⚡ Generate</button>
+          <button class="btn-outline" onclick="loadRoster()">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <div id="roster-weekend-msg" class="alert-info hidden">
+        🎉 Weekend! No duty roster required.
+      </div>
+
+      <div id="roster-empty-msg" class="alert-info hidden">
+        No roster for this date. Click <strong>Generate</strong> to auto-create one.
+      </div>
+
+      <div id="roster-table-wrap">
+        <table class="data-table" id="roster-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Teacher</th>
+              <th>Code</th>
+              <th>Route</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="roster-body"></tbody>
+        </table>
+      </div>
+
+      <h3 class="sub-heading">Week Overview</h3>
+      <div id="week-grid" class="week-grid"></div>
+    </section>
+
+    <!-- ── TEACHERS ── -->
+    <section id="section-teachers" class="section">
+      <div class="section-header">
+        <h2>Teachers</h2>
+        <button class="btn-primary" onclick="openModal('teacher-modal')">+ Add Teacher</button>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr><th>Name</th><th>Code</th><th>Passcode</th><th>Authorised</th><th>Active</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="teachers-body"></tbody>
+      </table>
+    </section>
+
+    <!-- ── ROUTES ── -->
+    <section id="section-routes" class="section">
+      <div class="section-header">
+        <h2>Routes</h2>
+        <button class="btn-primary" onclick="openModal('route-modal')">+ Add Route</button>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr><th>Route Name</th><th>Description</th><th>Morning</th><th>Active</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="routes-body"></tbody>
+      </table>
+    </section>
+
+    <!-- ── LOGS ── -->
+    <section id="section-logs" class="section">
+      <div class="section-header">
+        <h2>Audit Log</h2>
+        <button class="btn-outline" onclick="loadLogs()">🔄 Refresh</button>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr><th>Time</th><th>User Type</th><th>Name</th><th>Action</th><th>IP</th></tr>
+        </thead>
+        <tbody id="logs-body"></tbody>
+      </table>
+    </section>
+
+    <!-- ── ADMINS ── -->
+    <section id="section-admins" class="section">
+      <div class="section-header">
+        <h2>Admin Accounts</h2>
+        <button class="btn-primary" onclick="openModal('admin-modal')">+ Add Admin</button>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr><th>Username</th><th>Role</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="admins-body"></tbody>
+      </table>
+    </section>
+
+    <!-- ── SETTINGS ── -->
+    <section id="section-settings" class="section">
+      <div class="section-header"><h2>Settings</h2></div>
+      <div class="settings-card">
+        <div class="form-group">
+          <label>School Name</label>
+          <input type="text" id="setting-school-name" placeholder="Enter school name"/>
+        </div>
+        <div class="form-group toggle-row">
+          <label>Morning Route Active</label>
+          <label class="toggle">
+            <input type="checkbox" id="setting-morning"/>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
+        <p id="settings-msg" class="success-msg hidden">Settings saved.</p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ─── MODALS ─── -->
+
+<!-- Teacher Modal -->
+<div id="teacher-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="teacher-modal-title">Add Teacher</h3>
+      <button class="modal-close" onclick="closeModal('teacher-modal')">✕</button>
+    </div>
+    <input type="hidden" id="edit-teacher-id"/>
+    <div class="form-group"><label>Full Name</label><input type="text" id="t-name"/></div>
+    <div class="form-group"><label>Teaching Code</label><input type="text" id="t-tcode"/></div>
+    <div class="form-group"><label>Passcode (PIN)</label><input type="text" id="t-pcode"/></div>
+    <div class="form-group toggle-row">
+      <label>Authorised</label>
+      <label class="toggle"><input type="checkbox" id="t-auth"/><span class="slider"></span></label>
+    </div>
+    <div class="form-group toggle-row">
+      <label>Active</label>
+      <label class="toggle"><input type="checkbox" id="t-active" checked/><span class="slider"></span></label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeModal('teacher-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveTeacher()">Save</button>
+    </div>
+    <p id="teacher-modal-err" class="error-msg hidden"></p>
+  </div>
+</div>
+
+<!-- Route Modal -->
+<div id="route-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="route-modal-title">Add Route</h3>
+      <button class="modal-close" onclick="closeModal('route-modal')">✕</button>
+    </div>
+    <input type="hidden" id="edit-route-id"/>
+    <div class="form-group"><label>Route Name</label><input type="text" id="r-name"/></div>
+    <div class="form-group"><label>Description</label><input type="text" id="r-desc"/></div>
+    <div class="form-group toggle-row">
+      <label>Morning Route</label>
+      <label class="toggle"><input type="checkbox" id="r-morning"/><span class="slider"></span></label>
+    </div>
+    <div class="form-group toggle-row">
+      <label>Active</label>
+      <label class="toggle"><input type="checkbox" id="r-active" checked/><span class="slider"></span></label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeModal('route-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveRoute()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin Modal -->
+<div id="admin-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Add Admin</h3>
+      <button class="modal-close" onclick="closeModal('admin-modal')">✕</button>
+    </div>
+    <div class="form-group"><label>Username</label><input type="text" id="adm-user"/></div>
+    <div class="form-group"><label>Password</label><input type="password" id="adm-pass"/></div>
+    <div class="form-group">
+      <label>Role</label>
+      <select id="adm-role" class="form-select">
+        <option value="coordinator">Transport Coordinator</option>
+        <option value="headteacher">Headteacher</option>
+        <option value="it">IT Expert</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeModal('admin-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveAdmin()">Save</button>
+    </div>
+    <p id="admin-modal-err" class="error-msg hidden"></p>
+  </div>
+</div>
+
+<!-- Replacement Modal -->
+<div id="replace-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Suggest Replacement</h3>
+      <button class="modal-close" onclick="closeModal('replace-modal')">✕</button>
+    </div>
+    <p class="modal-info">Select a replacement teacher:</p>
+    <div id="replace-list" class="replace-list"></div>
+    <input type="hidden" id="replace-assignment-id"/>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeModal('replace-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/admin.js"></script>
+</body>
+</html>

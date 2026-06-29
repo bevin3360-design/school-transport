@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>School Transport System</title>
+<link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body>
+<div class="login-wrapper">
+  <div class="login-card">
+    <div class="logo-area">
+      <div class="logo-icon">🚌</div>
+      <h1 id="school-name-title">School Transport System</h1>
+      <p class="subtitle">Manage. Allocate. Track.</p>
+    </div>
+
+    <!-- Tab Switch -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('teacher')">Teacher Login</button>
+      <button class="tab-btn" onclick="switchTab('admin')">Admin Login</button>
+    </div>
+
+    <!-- Teacher Login -->
+    <div id="tab-teacher" class="tab-content active">
+      <div class="form-group">
+        <label>Teaching Code</label>
+        <input type="text" id="t-code" placeholder="e.g. TCH001" autocomplete="off"/>
+      </div>
+      <div class="form-group">
+        <label>Passcode</label>
+        <input type="password" id="t-pass" placeholder="Your passcode"/>
+      </div>
+      <button class="btn-primary full-width" onclick="teacherLogin()">Sign In</button>
+      <p id="t-error" class="error-msg hidden"></p>
+    </div>
+
+    <!-- Admin Login -->
+    <div id="tab-admin" class="tab-content">
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="a-user" placeholder="admin username" autocomplete="off"/>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="a-pass" placeholder="password"/>
+      </div>
+      <button class="btn-primary full-width" onclick="adminLogin()">Sign In</button>
+      <p id="a-error" class="error-msg hidden"></p>
+    </div>
+
+    <div class="footer-note">
+      <span class="badge-red">STS</span> Secure · Role-Based · Automated
+    </div>
+  </div>
+</div>
+
+<script>
+async function loadSchoolName() {
+  const r = await fetch('/api/settings');
+  const d = await r.json();
+  document.getElementById('school-name-title').textContent = d.school_name + ' – Transport System';
+  document.title = d.school_name + ' Transport System';
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  event.target.classList.add('active');
+}
+
+async function teacherLogin() {
+  const code = document.getElementById('t-code').value.trim();
+  const pass = document.getElementById('t-pass').value.trim();
+  const err = document.getElementById('t-error');
+  err.classList.add('hidden');
+  const r = await fetch('/api/teacher/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({teaching_code: code, passcode: pass})
+  });
+  const d = await r.json();
+  if (d.success) {
+    window.location.href = '/teacher';
+  } else {
+    err.textContent = d.message || 'Login failed';
+    err.classList.remove('hidden');
+  }
+}
+
+async function adminLogin() {
+  const user = document.getElementById('a-user').value.trim();
+  const pass = document.getElementById('a-pass').value.trim();
+  const err = document.getElementById('a-error');
+  err.classList.add('hidden');
+  const r = await fetch('/api/admin/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username: user, password: pass})
+  });
+  const d = await r.json();
+  if (d.success) {
+    window.location.href = '/admin';
+  } else {
+    err.textContent = d.message || 'Login failed';
+    err.classList.remove('hidden');
+  }
+}
+
+// Allow Enter key
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const activeTab = document.querySelector('.tab-content.active').id;
+    if (activeTab === 'tab-teacher') teacherLogin();
+    else adminLogin();
+  }
+});
+
+loadSchoolName();
+</script>
+</body>
+</html>

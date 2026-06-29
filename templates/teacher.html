@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>My Duties – STS</title>
+<link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body class="dashboard-body">
+
+<nav class="topnav">
+  <div class="nav-left">
+    <span class="nav-logo">🚌</span>
+    <span id="nav-school-name" class="nav-title">School Transport System</span>
+  </div>
+  <div class="nav-right">
+    <span id="nav-teacher-name" class="nav-user"></span>
+    <span class="badge-role">Teacher</span>
+    <button class="btn-outline-sm" onclick="logout()">Logout</button>
+  </div>
+</nav>
+
+<div class="teacher-layout">
+
+  <div class="teacher-card today-card">
+    <h2>📅 Today's Duty</h2>
+    <p class="date-label" id="today-label"></p>
+    <div id="today-duty"></div>
+  </div>
+
+  <div class="teacher-card week-card">
+    <h2>📆 This Week's Schedule</h2>
+    <input type="date" id="week-start-input" class="date-input" onchange="loadWeekTeacher()"/>
+    <div id="week-duty-list"></div>
+  </div>
+
+  <div class="teacher-card history-card">
+    <h2>🗂️ My Route History</h2>
+    <div id="history-list"></div>
+  </div>
+
+</div>
+
+<script>
+const today = new Date();
+const todayStr = today.toISOString().split('T')[0];
+
+document.getElementById('today-label').textContent = today.toDateString();
+document.getElementById('week-start-input').value = todayStr;
+
+async function loadSchoolName() {
+  const r = await fetch('/api/settings');
+  const d = await r.json();
+  document.getElementById('nav-school-name').textContent = d.school_name + ' – Transport System';
+}
+
+async function loadSession() {
+  const r = await fetch('/api/session');
+  const d = await r.json();
+  if (d.type !== 'teacher') { window.location.href = '/'; return; }
+  document.getElementById('nav-teacher-name').textContent = d.name;
+}
+
+async function loadTodayDuty() {
+  const r = await fetch('/api/roster/teacher?date=' + todayStr);
+  const duties = await r.json();
+  const el = document.getElementById('today-duty');
+  const dow = today.getDay();
+  if (dow === 0 || dow === 6) {
+    el.innerHTML = '<div class="no-duty-badge">🎉 Weekend – No duty today!</div>';
+    return;
+  }
+  if (!duties.length) {
+    el.innerHTML = '<div class="no-duty-badge">✅ No duty assigned for today</div>';
+    return;
+  }
+  el.innerHTML = duties.map(d => `
+    <div class="duty-card ${d.is_morning ? 'morning-card' : ''}">
+      <div class="duty-route">${d.route_name}</div>
+      <div class="duty-type">${d.is_morning ? '🌅 Morning Route' : '🚌 Afternoon Route'}</div>
+      <div class="duty-status status-${d.status}">${d.status.toUpperCase()}</div>
+    </div>
+  `).join('');
+}
+
+async function loadWeekTeacher() {
+  const start = document.getElementById('week-start-input').value;
+  const r = await fetch('/api/roster/week?start=' + start);
+  const days = await r.json();
+  const tid = await getMyId();
+  const el = document.getElementById('week-duty-list');
+  if (!days.length) { el.innerHTML = '<p class="muted">No data for this week.</p>'; return; }
+  el.innerHTML = days.map(day => {
+    const myDuties = day.assignments.filter(a => a.teaching_code);
+    return `
+      <div class="week-day-row">
+        <span class="week-day-label">${day.day} <small>${day.date}</small></span>
+        <span class="week-day-duty">
+          ${day.assignments.filter(a => true).map(a =>
+            `<span class="route-tag">${a.route_name}</span>`
+          ).join('') || '<span class="muted">—</span>'}
+        </span>
+      </div>
+    `;
+  }).join('');
+}
+
+async function getMyId() {
+  const r = await fetch('/api/session');
+  const d = await r.json();
+  return d.id;
+}
+
+async function loadHistory() {
+  // Load last 30 assignments for this teacher from week-based data
+  const el = document.getElementById('history-list');
+  const weeks = [];
+  let d = new Date(today);
+  d.setDate(d.getDate() - 28);
+  const promises = [];
+  for (let i = 0; i < 5; i++) {
+    const s = d.toISOString().split('T')[0];
+    promises.push(fetch('/api/roster/week?start=' + s).then(r => r.json()));
+    d.setDate(d.getDate() + 7);
+  }
+  const results = await Promise.all(promises);
+  const tid = await getMyId();
+  const entries = [];
+  results.forEach(days => {
+    days.forEach(day => {
+      day.assignments.forEach(a => {
+        entries.push({date: day.date, day: day.day, route: a.route_name, status: a.status, code: a.teaching_code});
+      });
+    });
+  });
+  if (!entries.length) { el.innerHTML = '<p class="muted">No history yet.</p>'; return; }
+  el.innerHTML = `<table class="data-table compact-table">
+    <thead><tr><th>Date</th><th>Day</th><th>Route</th><th>Status</th></tr></thead>
+    <tbody>${entries.slice(0,20).map(e => `
+      <tr>
+        <td>${e.date}</td>
+        <td>${e.day}</td>
+        <td>${e.route}</td>
+        <td><span class="status-${e.status}">${e.status}</span></td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function logout() {
+  await fetch('/api/logout', {method:'POST'});
+  window.location.href = '/';
+}
+
+loadSchoolName();
+loadSession();
+loadTodayDuty();
+loadWeekTeacher();
+loadHistory();
+</script>
+</body>
+</html>
