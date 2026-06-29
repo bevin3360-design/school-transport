@@ -3,8 +3,10 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, date, timedelta
+from functools import wraps
 import json
 import os
+import re
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'sts-secret-key-2024-school-transport')
@@ -19,6 +21,30 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 CORS(app)
 db = SQLAlchemy(app)
+
+# ─────────────────────────────────────────
+# RATE LIMITING (brute force protection)
+# ─────────────────────────────────────────
+login_attempts = {}  # ip -> [timestamps]
+
+def check_rate_limit(ip, max_attempts=10, window=300):
+    """Block IP after max_attempts in window seconds."""
+    now = datetime.utcnow().timestamp()
+    attempts = login_attempts.get(ip, [])
+    attempts = [t for t in attempts if now - t < window]
+    if len(attempts) >= max_attempts:
+        return False
+    attempts.append(now)
+    login_attempts[ip] = attempts
+    return True
+
+def sanitize(value, max_len=100):
+    """Strip dangerous characters from input."""
+    if not value:
+        return ''
+    value = str(value).strip()[:max_len]
+    value = re.sub(r'[<>"\';\\]', '', value)
+    return value
 
 # ─────────────────────────────────────────
 # MODELS
@@ -275,9 +301,18 @@ def teacher_panel():
 
 @app.route('/api/admin/login', methods=['POST'])
 def admin_login():
+    ip = request.remote_addr
+    if not check_rate_limit(ip):
+        return jsonify({'success': False, 'message': 'Too many attempts. Try again in 5 minutes.'}), 429
     data = request.get_json()
-    admin = Admin.query.filter_by(username=data.get('username')).first()
-    if admin and admin.check_password(data.get('password')):
+    if not data:
+        return jsonify({'success': False, 'message': 'Invalid request'}), 400
+    username = sanitize(data.get('username', ''))
+    password = data.get('password', '')
+    if not username or not password:
+        return jsonify({'success': False, 'message': 'Missing credentials'}), 400
+    admin = Admin.query.filter_by(username=username).first()
+    if admin and admin.check_password(password):
         session['admin_id'] = admin.id
         session['admin_name'] = admin.username
         session['admin_role'] = admin.role
@@ -287,10 +322,19 @@ def admin_login():
 
 @app.route('/api/teacher/login', methods=['POST'])
 def teacher_login():
+    ip = request.remote_addr
+    if not check_rate_limit(ip):
+        return jsonify({'success': False, 'message': 'Too many attempts. Try again in 5 minutes.'}), 429
     data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'message': 'Invalid request'}), 400
+    teaching_code = sanitize(data.get('teaching_code', ''))
+    passcode = sanitize(data.get('passcode', ''))
+    if not teaching_code or not passcode:
+        return jsonify({'success': False, 'message': 'Missing credentials'}), 400
     teacher = Teacher.query.filter_by(
-        teaching_code=data.get('teaching_code'),
-        passcode=data.get('passcode'),
+        teaching_code=teaching_code,
+        passcode=passcode,
         authorised=True,
         active=True
     ).first()
@@ -655,6 +699,17 @@ def init_db():
             ]
             db.session.bulk_save_objects(teachers)
             db.session.commit()
+
+# ─────────────────────────────────────────
+# SECURITY HEADERS
+# ─────────────────────────────────────────
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
 
 if __name__ == '__main__':
     init_db()
