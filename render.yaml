@@ -1,11 +1,13 @@
 services:
   - type: web
-    name: school-transport-system
+    name: school-transport
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python -c "from app import init_db; init_db()" && gunicorn app:app --bind 0.0.0.0:$PORT
+    startCommand: python -c "import os; os.environ['RENDER']='1'; from app import init_db; init_db()" && gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
     envVars:
       - key: SECRET_KEY
         generateValue: true
+      - key: RENDER
+        value: "1"
       - key: PYTHON_VERSION
-        value: 3.13.0
+        value: 3.11.0

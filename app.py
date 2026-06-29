@@ -7,8 +7,14 @@ import json
 import os
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'sts-secret-key-2024-change-in-production'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///school_transport.db'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'sts-secret-key-2024-school-transport')
+# Use /tmp for writable storage on Render, local instance folder otherwise
+if os.environ.get('RENDER'):
+    db_path = '/tmp/school_transport.db'
+else:
+    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'school_transport.db')
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 CORS(app)
@@ -22,6 +28,8 @@ class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     school_name = db.Column(db.String(200), default='My School')
     morning_route_active = db.Column(db.Boolean, default=False)
+    public_link = db.Column(db.String(300), default='')
+    link_label = db.Column(db.String(100), default='Weekly School Transport Link')
 
 class Admin(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -317,7 +325,12 @@ def check_session():
 @app.route('/api/settings', methods=['GET'])
 def get_settings_api():
     s = get_settings()
-    return jsonify({'school_name': s.school_name, 'morning_route_active': s.morning_route_active})
+    return jsonify({
+        'school_name': s.school_name,
+        'morning_route_active': s.morning_route_active,
+        'public_link': s.public_link or '',
+        'link_label': s.link_label or 'Weekly School Transport Link'
+    })
 
 @app.route('/api/settings', methods=['PUT'])
 def update_settings():
@@ -329,6 +342,10 @@ def update_settings():
         s.school_name = data['school_name']
     if 'morning_route_active' in data:
         s.morning_route_active = data['morning_route_active']
+    if 'public_link' in data:
+        s.public_link = data['public_link']
+    if 'link_label' in data:
+        s.link_label = data['link_label']
     db.session.commit()
     log_action('admin', session['admin_id'], session.get('admin_name'), f'Settings updated: {data}')
     return jsonify({'success': True})
