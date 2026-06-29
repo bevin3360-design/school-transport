@@ -53,24 +53,68 @@ async function loadSettings() {
   document.title = d.school_name + ' Admin';
   const sn = document.getElementById('setting-school-name');
   const sm = document.getElementById('setting-morning');
+  const sl = document.getElementById('setting-public-link');
+  const sll = document.getElementById('setting-link-label');
   if (sn) sn.value = d.school_name;
   if (sm) sm.checked = d.morning_route_active;
+  if (sl) sl.value = d.public_link || '';
+  if (sll) sll.value = d.link_label || 'Weekly School Transport Link';
+  updateShareCard(d);
+}
+
+function updateShareCard(d) {
+  const card = document.getElementById('share-card');
+  const link = d.public_link || document.getElementById('setting-public-link')?.value;
+  if (!card) return;
+  if (link) {
+    card.classList.remove('hidden');
+    document.getElementById('share-label-preview').textContent =
+      d.link_label || document.getElementById('setting-link-label')?.value || 'Weekly School Transport Link';
+    document.getElementById('share-school-preview').textContent =
+      (d.school_name || document.getElementById('setting-school-name')?.value || 'School') + ' – Transport System';
+    const linkEl = document.getElementById('share-link-preview');
+    linkEl.textContent = link;
+    linkEl.href = link;
+  } else {
+    card.classList.add('hidden');
+  }
 }
 
 async function saveSettings() {
   const school_name = document.getElementById('setting-school-name').value.trim();
   const morning_route_active = document.getElementById('setting-morning').checked;
+  const public_link = document.getElementById('setting-public-link').value.trim();
+  const link_label = document.getElementById('setting-link-label').value.trim();
   const r = await fetch('/api/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ school_name, morning_route_active })
+    body: JSON.stringify({ school_name, morning_route_active, public_link, link_label })
   });
   const d = await r.json();
   const msg = document.getElementById('settings-msg');
   if (d.success) {
     msg.classList.remove('hidden');
     document.getElementById('nav-school-name').textContent = school_name + ' – Transport System';
+    updateShareCard({ school_name, public_link, link_label });
     setTimeout(() => msg.classList.add('hidden'), 3000);
+  }
+}
+
+function copyLink() {
+  const link = document.getElementById('setting-public-link').value.trim();
+  if (!link) { alert('No link saved yet.'); return; }
+  navigator.clipboard.writeText(link).then(() => alert('Link copied to clipboard!'));
+}
+
+function shareLink() {
+  const link = document.getElementById('share-link-preview').textContent;
+  const label = document.getElementById('share-label-preview').textContent;
+  const school = document.getElementById('share-school-preview').textContent;
+  const text = `${label}\n${school}\n${link}`;
+  if (navigator.share) {
+    navigator.share({ title: label, text: text, url: link });
+  } else {
+    navigator.clipboard.writeText(text).then(() => alert('Link copied! Paste it in WhatsApp or SMS.'));
   }
 }
 
@@ -269,15 +313,12 @@ async function saveTeacher() {
   const err = document.getElementById('teacher-modal-err');
   err.classList.add('hidden');
 
-  if (!name || !teaching_code) {
-    err.textContent = 'Name and teaching code are required.';
-    err.classList.remove('hidden');
-    return;
-  }
+  if (!name) { err.textContent = 'Name is required.'; err.classList.remove('hidden'); return; }
+  if (!teaching_code) { err.textContent = 'Teaching code is required.'; err.classList.remove('hidden'); return; }
 
-  let r;
+  let r, body;
   if (id) {
-    const body = { name, teaching_code, authorised, active };
+    body = { name, teaching_code, authorised, active };
     if (passcode) body.passcode = passcode;
     r = await fetch('/api/teachers/' + id, {
       method: 'PUT',
@@ -302,7 +343,7 @@ async function saveTeacher() {
     closeModal('teacher-modal');
     loadTeachers();
   } else {
-    err.textContent = d.error || 'Error saving.';
+    err.textContent = d.error || 'Error saving teacher. Please try again.';
     err.classList.remove('hidden');
   }
 }

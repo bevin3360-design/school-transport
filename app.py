@@ -38,12 +38,13 @@ def check_rate_limit(ip, max_attempts=10, window=300):
     login_attempts[ip] = attempts
     return True
 
-def sanitize(value, max_len=100):
-    """Strip dangerous characters from input."""
+def sanitize(value, max_len=200):
+    """Strip truly dangerous characters only — allow names, apostrophes, hyphens etc."""
     if not value:
         return ''
     value = str(value).strip()[:max_len]
-    value = re.sub(r'[<>"\';\\]', '', value)
+    # Only remove HTML/script injection characters, keep apostrophes and normal name chars
+    value = re.sub(r'[<>\\]', '', value)
     return value
 
 # ─────────────────────────────────────────
@@ -413,12 +414,19 @@ def add_teacher():
     if not is_admin():
         return jsonify({'error': 'Unauthorised'}), 403
     data = request.get_json()
-    if Teacher.query.filter_by(teaching_code=data['teaching_code']).first():
+    if not data:
+        return jsonify({'error': 'No data received'}), 400
+    name = sanitize(data.get('name', ''))
+    teaching_code = sanitize(data.get('teaching_code', ''))
+    passcode = sanitize(data.get('passcode', ''))
+    if not name or not teaching_code or not passcode:
+        return jsonify({'error': 'Name, teaching code and passcode are required'}), 400
+    if Teacher.query.filter_by(teaching_code=teaching_code).first():
         return jsonify({'error': 'Teaching code already exists'}), 400
     t = Teacher(
-        name=data['name'],
-        teaching_code=data['teaching_code'],
-        passcode=data['passcode'],
+        name=name,
+        teaching_code=teaching_code,
+        passcode=passcode,
         authorised=data.get('authorised', False)
     )
     db.session.add(t)
@@ -432,9 +440,18 @@ def update_teacher(tid):
         return jsonify({'error': 'Unauthorised'}), 403
     t = Teacher.query.get_or_404(tid)
     data = request.get_json()
-    for field in ['name', 'teaching_code', 'passcode', 'active', 'authorised']:
-        if field in data:
-            setattr(t, field, data[field])
+    if not data:
+        return jsonify({'error': 'No data received'}), 400
+    if 'name' in data:
+        t.name = sanitize(data['name'])
+    if 'teaching_code' in data:
+        t.teaching_code = sanitize(data['teaching_code'])
+    if 'passcode' in data:
+        t.passcode = sanitize(data['passcode'])
+    if 'active' in data:
+        t.active = data['active']
+    if 'authorised' in data:
+        t.authorised = data['authorised']
     db.session.commit()
     log_action('admin', session['admin_id'], session.get('admin_name'), f'Updated teacher: {t.name}')
     return jsonify({'success': True})
