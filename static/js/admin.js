@@ -53,13 +53,31 @@ async function loadSettings() {
   document.title = d.school_name + ' Admin';
   const sn = document.getElementById('setting-school-name');
   const sm = document.getElementById('setting-morning');
+  const se = document.getElementById('setting-evening');
   const sl = document.getElementById('setting-public-link');
   const sll = document.getElementById('setting-link-label');
   if (sn) sn.value = d.school_name;
-  if (sm) sm.checked = d.morning_route_active;
+  if (sm) { sm.checked = d.morning_route_active; updateRouteCardStyle('morning'); }
+  if (se) { se.checked = d.evening_route_active; updateRouteCardStyle('evening'); }
   if (sl) sl.value = d.public_link || '';
   if (sll) sll.value = d.link_label || 'Weekly School Transport Link';
   updateShareCard(d);
+}
+
+function updateRouteCardStyle(type) {
+  const cb = document.getElementById('setting-' + type);
+  const card = document.getElementById(type + '-card');
+  const status = document.getElementById(type + '-status');
+  if (!cb || !card || !status) return;
+  if (cb.checked) {
+    card.classList.add('active-card');
+    status.textContent = '● ACTIVE';
+    status.className = 'ra-status status-active';
+  } else {
+    card.classList.remove('active-card');
+    status.textContent = '● DORMANT';
+    status.className = 'ra-status status-inactive';
+  }
 }
 
 function updateShareCard(d) {
@@ -83,12 +101,16 @@ function updateShareCard(d) {
 async function saveSettings() {
   const school_name = document.getElementById('setting-school-name').value.trim();
   const morning_route_active = document.getElementById('setting-morning').checked;
+  const evening_route_active = document.getElementById('setting-evening').checked;
   const public_link = document.getElementById('setting-public-link').value.trim();
   const link_label = document.getElementById('setting-link-label').value.trim();
+
+  if (!school_name) { alert('School name cannot be empty.'); return; }
+
   const r = await fetch('/api/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ school_name, morning_route_active, public_link, link_label })
+    body: JSON.stringify({ school_name, morning_route_active, evening_route_active, public_link, link_label })
   });
   const d = await r.json();
   const msg = document.getElementById('settings-msg');
@@ -97,6 +119,8 @@ async function saveSettings() {
     document.getElementById('nav-school-name').textContent = school_name + ' – Transport System';
     updateShareCard({ school_name, public_link, link_label });
     setTimeout(() => msg.classList.add('hidden'), 3000);
+  } else {
+    alert('Error saving settings. Please try again.');
   }
 }
 
@@ -110,7 +134,7 @@ function shareLink() {
   const link = document.getElementById('share-link-preview').textContent;
   const label = document.getElementById('share-label-preview').textContent;
   const school = document.getElementById('share-school-preview').textContent;
-  const text = `${label}\n${school}\n${link}`;
+  const text = label + '\n' + school + '\n' + link;
   if (navigator.share) {
     navigator.share({ title: label, text: text, url: link });
   } else {

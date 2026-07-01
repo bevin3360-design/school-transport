@@ -622,3 +622,77 @@ body {
   .nav-item { white-space: nowrap; padding: 0.5rem 0.8rem; border-left: none; border-bottom: 3px solid transparent; }
   .nav-item.active { border-left: none; border-bottom-color: var(--red); }
 }
+
+/* ── SHARE CARD ── */
+.share-card {
+  background: linear-gradient(135deg, var(--black) 0%, var(--dark) 100%);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin: 1.2rem 0;
+}
+.share-card-inner { text-align: center; }
+.share-card-title {
+  color: var(--sky-light);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.4rem;
+}
+.share-card-school {
+  color: var(--white);
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 0.8rem;
+}
+.share-card-link {
+  display: block;
+  background: var(--sky);
+  color: var(--white);
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  word-break: break-all;
+  margin-bottom: 0.8rem;
+  transition: background var(--transition);
+}
+.share-card-link:hover { background: var(--sky-dark); }
+.share-card-hint {
+  color: var(--grey-mid);
+  font-size: 0.78rem;
+}
+
+/* ── ROUTE ACTIVATION CARDS ── */
+.route-activation-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+@media (max-width: 500px) {
+  .route-activation-grid { grid-template-columns: 1fr; }
+}
+.route-activation-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: var(--radius);
+  border: 2px solid var(--grey);
+  background: var(--off-white);
+  transition: var(--transition);
+}
+.route-activation-card.active-card {
+  border-color: var(--sky);
+  background: var(--sky-light);
+}
+.ra-icon { font-size: 2rem; flex-shrink: 0; }
+.ra-info { flex: 1; }
+.ra-title { font-weight: 700; font-size: 0.95rem; color: var(--black); }
+.ra-desc { font-size: 0.78rem; color: var(--text-light); margin-top: 0.2rem; }
+.ra-status { font-size: 0.75rem; font-weight: 700; margin-top: 0.3rem; }
+.status-active { color: var(--success); }
+.status-inactive { color: var(--text-light); }
+.ra-action { flex-shrink: 0; }

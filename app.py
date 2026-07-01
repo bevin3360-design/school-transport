@@ -55,6 +55,7 @@ class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     school_name = db.Column(db.String(200), default='My School')
     morning_route_active = db.Column(db.Boolean, default=False)
+    evening_route_active = db.Column(db.Boolean, default=False)
     public_link = db.Column(db.String(300), default='')
     link_label = db.Column(db.String(100), default='Weekly School Transport Link')
 
@@ -151,6 +152,7 @@ def generate_roster(target_date):
     3. Each teacher rotates through ALL routes before repeating any
     4. No teacher dominates a route
     5. Morning routes only assigned if activated by admin
+    6. Evening routes only assigned if activated by admin
     """
     if is_weekend(target_date):
         return []
@@ -159,8 +161,16 @@ def generate_roster(target_date):
     teachers = Teacher.query.filter_by(active=True, authorised=True).all()
     routes = Route.query.filter_by(active=True).all()
 
-    if not settings.morning_route_active:
-        routes = [r for r in routes if not r.is_morning]
+    morning_on = settings.morning_route_active
+    evening_on = getattr(settings, 'evening_route_active', False)
+
+    filtered_routes = []
+    for r in routes:
+        if r.is_morning and morning_on:
+            filtered_routes.append(r)
+        elif not r.is_morning and evening_on:
+            filtered_routes.append(r)
+    routes = filtered_routes
 
     if not teachers or not routes:
         return []
@@ -373,6 +383,7 @@ def get_settings_api():
     return jsonify({
         'school_name': s.school_name,
         'morning_route_active': s.morning_route_active,
+        'evening_route_active': getattr(s, 'evening_route_active', False),
         'public_link': s.public_link or '',
         'link_label': s.link_label or 'Weekly School Transport Link'
     })
@@ -384,15 +395,17 @@ def update_settings():
     data = request.get_json()
     s = get_settings()
     if 'school_name' in data:
-        s.school_name = data['school_name']
+        s.school_name = sanitize(data['school_name'])
     if 'morning_route_active' in data:
-        s.morning_route_active = data['morning_route_active']
+        s.morning_route_active = bool(data['morning_route_active'])
+    if 'evening_route_active' in data:
+        s.evening_route_active = bool(data['evening_route_active'])
     if 'public_link' in data:
-        s.public_link = data['public_link']
+        s.public_link = data['public_link'].strip()
     if 'link_label' in data:
-        s.link_label = data['link_label']
+        s.link_label = sanitize(data['link_label'])
     db.session.commit()
-    log_action('admin', session['admin_id'], session.get('admin_name'), f'Settings updated: {data}')
+    log_action('admin', session['admin_id'], session.get('admin_name'), f'Settings updated')
     return jsonify({'success': True})
 
 # ─────────────────────────────────────────

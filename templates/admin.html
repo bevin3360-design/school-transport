@@ -136,19 +136,86 @@
     <section id="section-settings" class="section">
       <div class="section-header"><h2>Settings</h2></div>
       <div class="settings-card">
+
+        <!-- School Name -->
         <div class="form-group">
           <label>School Name</label>
           <input type="text" id="setting-school-name" placeholder="Enter school name"/>
         </div>
-        <div class="form-group toggle-row">
-          <label>Morning Route Active</label>
-          <label class="toggle">
-            <input type="checkbox" id="setting-morning"/>
-            <span class="slider"></span>
-          </label>
+
+        <hr style="margin:1.5rem 0;border:none;border-top:2px solid var(--grey)"/>
+
+        <!-- Route Activation -->
+        <h3 style="font-size:1rem;margin-bottom:1rem;color:var(--black)">🚌 Route Activation</h3>
+
+        <div class="route-activation-grid">
+          <!-- Evening Routes -->
+          <div class="route-activation-card active-card" id="evening-card">
+            <div class="ra-icon">🌆</div>
+            <div class="ra-info">
+              <div class="ra-title">Evening Routes</div>
+              <div class="ra-desc">Afternoon/evening transport for all routes</div>
+              <div id="evening-status" class="ra-status status-active">● ACTIVE</div>
+            </div>
+            <div class="ra-action">
+              <label class="toggle">
+                <input type="checkbox" id="setting-evening" checked onchange="updateRouteCardStyle('evening')"/>
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Morning Routes -->
+          <div class="route-activation-card" id="morning-card">
+            <div class="ra-icon">🌅</div>
+            <div class="ra-info">
+              <div class="ra-title">Morning Routes</div>
+              <div class="ra-desc">Early morning transport — activate when needed</div>
+              <div id="morning-status" class="ra-status status-inactive">● DORMANT</div>
+            </div>
+            <div class="ra-action">
+              <label class="toggle">
+                <input type="checkbox" id="setting-morning" onchange="updateRouteCardStyle('morning')"/>
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
         </div>
-        <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
-        <p id="settings-msg" class="success-msg hidden">Settings saved.</p>
+
+        <div class="alert-info" style="margin:1rem 0;font-size:0.85rem">
+          ⚠️ Only authorised admins (Headteacher, IT, Coordinator) can activate morning routes.
+          Morning routes remain <strong>dormant</strong> until manually switched on here.
+        </div>
+
+        <hr style="margin:1.5rem 0;border:none;border-top:2px solid var(--grey)"/>
+
+        <!-- Public Link -->
+        <h3 style="font-size:1rem;margin-bottom:1rem;color:var(--black)">🔗 Public Access Link</h3>
+        <div class="form-group">
+          <label>Link Label / Name</label>
+          <input type="text" id="setting-link-label" placeholder="e.g. Weekly School Transport Link"/>
+        </div>
+        <div class="form-group">
+          <label>Public URL</label>
+          <div style="display:flex;gap:0.5rem">
+            <input type="text" id="setting-public-link" placeholder="e.g. https://school-transport.onrender.com"/>
+            <button class="btn-outline" onclick="copyLink()" title="Copy link">📋</button>
+          </div>
+        </div>
+
+        <!-- Share Card -->
+        <div id="share-card" class="share-card hidden">
+          <div class="share-card-inner">
+            <div class="share-card-title" id="share-label-preview"></div>
+            <div class="share-card-school" id="share-school-preview"></div>
+            <a class="share-card-link" id="share-link-preview" href="#" target="_blank"></a>
+            <div class="share-card-hint">Share this link with teachers via WhatsApp, SMS or email</div>
+            <button class="btn-primary" style="width:100%;margin-top:0.8rem" onclick="shareLink()">📤 Share / Copy Link</button>
+          </div>
+        </div>
+
+        <button class="btn-primary" onclick="saveSettings()" style="margin-top:1rem">💾 Save All Settings</button>
+        <p id="settings-msg" class="success-msg hidden">✔ Settings saved successfully.</p>
       </div>
     </section>
 
