@@ -502,6 +502,98 @@ def activate_school(sid):
                f'Manually activated: {s.name} for {days} days')
     return jsonify({'success': True})
 
+@app.route('/api/super/school/create', methods=['POST'])
+def super_create_school():
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    data = request.get_json()
+    name           = sanitize(data.get('name',''))
+    code           = sanitize(data.get('code','').upper())
+    email          = sanitize(data.get('email',''))
+    phone          = sanitize(data.get('phone',''))
+    county         = sanitize(data.get('county',''))
+    plan           = sanitize(data.get('plan','basic'))
+    admin_username = sanitize(data.get('admin_username',''))
+    admin_password = data.get('admin_password','')
+    days           = int(data.get('days', 30))
+
+    if not all([name, code, admin_username, admin_password]):
+        return jsonify({'error': 'School name, code, admin username and password are required'}), 400
+    if School.query.filter_by(code=code).first():
+        return jsonify({'error': f'School code {code} already exists'}), 400
+    if len(admin_password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+
+    school = School(
+        name=name, code=code, email=email, phone=phone,
+        county=county, plan=plan, status='active',
+        trial_start=date.today(),
+        trial_end=date.today() + timedelta(days=TRIAL_DAYS),
+        subscription_end=date.today() + timedelta(days=days)
+    )
+    db.session.add(school)
+    db.session.flush()
+    admin = SchoolAdmin(school_id=school.id, username=admin_username, role='coordinator')
+    admin.set_password(admin_password)
+    db.session.add(admin)
+    db.session.commit()
+    log_action(None, 'super', session.get('super_name'),
+               f'Created school: {name} ({code}) on {plan} plan')
+    return jsonify({'success': True, 'school_id': school.id,
+                    'message': f'{name} created successfully on {plan} plan.'})
+
+@app.route('/api/super/school/<int:sid>/edit', methods=['PUT'])
+def super_edit_school(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    s = School.query.get_or_404(sid)
+    data = request.get_json()
+    if 'name'   in data: s.name   = sanitize(data['name'])
+    if 'email'  in data: s.email  = sanitize(data['email'])
+    if 'phone'  in data: s.phone  = sanitize(data['phone'])
+    if 'county' in data: s.county = sanitize(data['county'])
+    if 'plan'   in data: s.plan   = sanitize(data['plan'])
+    if 'status' in data: s.status = sanitize(data['status'])
+    if 'subscription_end' in data and data['subscription_end']:
+        try:
+            s.subscription_end = date.fromisoformat(data['subscription_end'])
+        except ValueError:
+            pass
+    db.session.commit()
+    log_action(None, 'super', session.get('super_name'), f'Edited school: {s.name}')
+    return jsonify({'success': True})
+
+@app.route('/api/super/school/<int:sid>/reset-password', methods=['POST'])
+def super_reset_admin_password(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    data = request.get_json()
+    new_password = data.get('password','')
+    if len(new_password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    admin = SchoolAdmin.query.filter_by(school_id=sid).first()
+    if not admin:
+        return jsonify({'error': 'No admin found for this school'}), 404
+    admin.set_password(new_password)
+    db.session.commit()
+    log_action(None, 'super', session.get('super_name'),
+               f'Reset admin password for school id {sid}')
+    return jsonify({'success': True, 'message': f'Password reset for {admin.username}'})
+
+@app.route('/api/super/school/<int:sid>/delete', methods=['DELETE'])
+def super_delete_school(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    s = School.query.get_or_404(sid)
+    name = s.name
+    # Delete all related records first
+    DutyAssignment.query.filter_by(school_id=sid).delete()
+    Payment.query.filter_by(school_id=sid).delete()
+    Route.query.filter_by(school_id=sid).delete()
+    Teacher.query.filter_by(school_id=sid).delete()
+    SchoolAdmin.query.filter_by(school_id=sid).delete()
+    AuditLog.query.filter_by(school_id=sid).delete()
+    db.session.delete(s)
+    db.session.commit()
+    log_action(None, 'super', session.get('super_name'), f'Deleted school: {name}')
+    return jsonify({'success': True})
+
 @app.route('/api/super/stats')
 def super_stats():
     if not is_super(): return jsonify({'error':'Unauthorised'}), 403

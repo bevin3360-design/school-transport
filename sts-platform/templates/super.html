@@ -32,8 +32,10 @@
 
     <!-- DASHBOARD -->
     <section id="section-dashboard" class="section active">
-      <div class="section-header"><h2>📊 Platform Overview</h2>
-        <button class="btn-outline" onclick="loadAll()">🔄 Refresh</button></div>
+      <div class="section-header">
+        <h2>📊 Platform Overview</h2>
+        <button class="btn-outline" onclick="loadAll()">🔄 Refresh</button>
+      </div>
       <div class="stats-grid" id="stats-grid"></div>
       <div class="alert-info" id="pending-alert" style="display:none">
         ⚠️ You have <strong id="pending-count">0</strong> pending payment(s) to verify.
@@ -43,28 +45,43 @@
 
     <!-- SCHOOLS -->
     <section id="section-schools" class="section">
-      <div class="section-header"><h2>🏫 All Schools</h2>
-        <button class="btn-outline" onclick="loadSchools()">🔄 Refresh</button></div>
+      <div class="section-header">
+        <h2>🏫 All Schools</h2>
+        <div class="header-actions">
+          <button class="btn-outline" onclick="loadSchools()">🔄 Refresh</button>
+          <button class="btn-primary" onclick="openCreateSchool()">+ Create School</button>
+        </div>
+      </div>
       <table class="data-table">
-        <thead><tr><th>School</th><th>Code</th><th>Plan</th><th>Status</th><th>Days Left</th><th>Teachers</th><th>Routes</th><th>Actions</th></tr></thead>
+        <thead><tr>
+          <th>School</th><th>Code</th><th>Plan</th><th>Status</th>
+          <th>Days Left</th><th>Teachers</th><th>Routes</th><th>Actions</th>
+        </tr></thead>
         <tbody id="schools-body"></tbody>
       </table>
     </section>
 
     <!-- PAYMENTS -->
     <section id="section-payments" class="section">
-      <div class="section-header"><h2>💳 Payment Requests</h2>
-        <button class="btn-outline" onclick="loadPayments()">🔄 Refresh</button></div>
+      <div class="section-header">
+        <h2>💳 Payment Requests</h2>
+        <button class="btn-outline" onclick="loadPayments()">🔄 Refresh</button>
+      </div>
       <table class="data-table">
-        <thead><tr><th>School</th><th>M-Pesa Code</th><th>Amount</th><th>Plan</th><th>Phone</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead>
+        <thead><tr>
+          <th>School</th><th>M-Pesa Code</th><th>Amount</th><th>Plan</th>
+          <th>Phone</th><th>Status</th><th>Submitted</th><th>Actions</th>
+        </tr></thead>
         <tbody id="payments-body"></tbody>
       </table>
     </section>
 
     <!-- LOGS -->
     <section id="section-logs" class="section">
-      <div class="section-header"><h2>📝 Audit Logs</h2>
-        <button class="btn-outline" onclick="loadLogs()">🔄 Refresh</button></div>
+      <div class="section-header">
+        <h2>📝 Audit Logs</h2>
+        <button class="btn-outline" onclick="loadLogs()">🔄 Refresh</button>
+      </div>
       <table class="data-table">
         <thead><tr><th>Time</th><th>Type</th><th>User</th><th>Action</th><th>IP</th></tr></thead>
         <tbody id="logs-body"></tbody>
@@ -74,15 +91,131 @@
   </main>
 </div>
 
-<!-- Activate Modal -->
+<!-- ═══ CREATE SCHOOL MODAL ═══ -->
+<div id="create-school-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>🏫 Create New School</h3>
+      <button class="modal-close" onclick="closeModal('create-school-modal')">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group"><label>School Name</label>
+        <input type="text" id="cs-name" placeholder="e.g. Greenfield Academy"/></div>
+      <div class="form-group"><label>School Code</label>
+        <input type="text" id="cs-code" placeholder="e.g. GFA001" style="text-transform:uppercase"/></div>
+      <div class="form-group"><label>County</label>
+        <input type="text" id="cs-county" placeholder="e.g. Nairobi"/></div>
+      <div class="form-group"><label>Phone</label>
+        <input type="text" id="cs-phone" placeholder="e.g. 0712345678"/></div>
+      <div class="form-group"><label>Email</label>
+        <input type="email" id="cs-email" placeholder="school@email.com"/></div>
+      <div class="form-group"><label>Plan</label>
+        <select id="cs-plan" class="form-select">
+          <option value="basic">Basic – KES 500/mo (10 teachers, 4 routes)</option>
+          <option value="standard">Standard – KES 1,500/mo (20 teachers, 8 routes)</option>
+          <option value="premium">Premium – KES 3,000/mo (Unlimited)</option>
+        </select></div>
+      <div class="form-group"><label>Active Days</label>
+        <select id="cs-days" class="form-select">
+          <option value="30">30 days</option>
+          <option value="90">90 days</option>
+          <option value="180">180 days</option>
+          <option value="365">1 year</option>
+        </select></div>
+    </div>
+    <hr style="margin:1rem 0;border:none;border-top:2px solid var(--grey)"/>
+    <p style="font-size:.85rem;font-weight:700;margin-bottom:.6rem">Admin Account</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group"><label>Admin Username</label>
+        <input type="text" id="cs-admin" placeholder="e.g. admin.gfa"/></div>
+      <div class="form-group"><label>Admin Password</label>
+        <input type="password" id="cs-pw" placeholder="Min 6 characters"/></div>
+    </div>
+    <p id="cs-err" class="error-msg hidden"></p>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeModal('create-school-modal')">Cancel</button>
+      <button class="btn-primary" onclick="createSchool()">🚀 Create School</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ EDIT SCHOOL MODAL ═══ -->
+<div id="edit-school-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>✏️ Edit School</h3>
+      <button class="modal-close" onclick="closeModal('edit-school-modal')">✕</button>
+    </div>
+    <input type="hidden" id="es-id"/>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group"><label>School Name</label>
+        <input type="text" id="es-name"/></div>
+      <div class="form-group"><label>County</label>
+        <input type="text" id="es-county"/></div>
+      <div class="form-group"><label>Phone</label>
+        <input type="text" id="es-phone"/></div>
+      <div class="form-group"><label>Email</label>
+        <input type="email" id="es-email"/></div>
+      <div class="form-group"><label>Plan</label>
+        <select id="es-plan" class="form-select">
+          <option value="basic">Basic</option>
+          <option value="standard">Standard</option>
+          <option value="premium">Premium</option>
+        </select></div>
+      <div class="form-group"><label>Status</label>
+        <select id="es-status" class="form-select">
+          <option value="trial">Trial</option>
+          <option value="active">Active</option>
+          <option value="expired">Expired</option>
+          <option value="suspended">Suspended</option>
+        </select></div>
+      <div class="form-group" style="grid-column:1/-1"><label>Subscription End Date</label>
+        <input type="date" id="es-subend"/></div>
+    </div>
+    <p id="es-err" class="error-msg hidden"></p>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeModal('edit-school-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveEditSchool()">💾 Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ RESET PASSWORD MODAL ═══ -->
+<div id="reset-pw-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>🔑 Reset Admin Password</h3>
+      <button class="modal-close" onclick="closeModal('reset-pw-modal')">✕</button>
+    </div>
+    <input type="hidden" id="rp-id"/>
+    <div class="alert-warn" style="margin-bottom:1rem">
+      This will immediately change the login password for this school's admin.
+    </div>
+    <div class="form-group"><label>School</label>
+      <input type="text" id="rp-school-name" readonly style="background:var(--grey)"/></div>
+    <div class="form-group"><label>New Password</label>
+      <input type="password" id="rp-pw" placeholder="Min 6 characters"/></div>
+    <div class="form-group"><label>Confirm Password</label>
+      <input type="password" id="rp-pw2" placeholder="Repeat password"/></div>
+    <p id="rp-err" class="error-msg hidden"></p>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeModal('reset-pw-modal')">Cancel</button>
+      <button class="btn-primary" onclick="resetPassword()">🔑 Reset Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ ACTIVATE MODAL ═══ -->
 <div id="activate-modal" class="modal-overlay hidden">
   <div class="modal">
-    <div class="modal-header"><h3>Activate School</h3>
-      <button class="modal-close" onclick="closeModal('activate-modal')">✕</button></div>
+    <div class="modal-header">
+      <h3>✅ Activate School</h3>
+      <button class="modal-close" onclick="closeModal('activate-modal')">✕</button>
+    </div>
     <input type="hidden" id="activate-school-id"/>
-    <div class="form-group"><label>School Name</label>
+    <div class="form-group"><label>School</label>
       <input type="text" id="activate-school-name" readonly style="background:var(--grey)"/></div>
-    <div class="form-group"><label>Days to Activate</label>
+    <div class="form-group"><label>Activate for</label>
       <select id="activate-days" class="form-select">
         <option value="30">30 days (1 month)</option>
         <option value="90">90 days (3 months)</option>
