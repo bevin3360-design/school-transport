@@ -148,7 +148,7 @@ class AuditLog(db.Model):
 class PlatformSettings(db.Model):
     id           = db.Column(db.Integer, primary_key=True)
     mpesa_number = db.Column(db.String(20),  default='0753538323')
-    mpesa_name   = db.Column(db.String(100), default='KEVIN OGUTU')
+    mpesa_name   = db.Column(db.String(100), default='BEN RAY')
     platform_name= db.Column(db.String(200), default='School Transport System')
     trial_days   = db.Column(db.Integer,     default=30)
     updated_at   = db.Column(db.DateTime,    default=datetime.utcnow)
