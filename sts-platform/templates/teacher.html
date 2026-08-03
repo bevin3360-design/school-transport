@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>My Duties – STS</title>
+<link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body class="dash-body">
+<nav class="topnav">
+  <div class="nav-left"><span class="nav-logo">🚌</span>
+    <span id="nav-school" class="nav-title">School Transport System</span></div>
+  <div class="nav-right">
+    <span id="nav-name" class="nav-user"></span>
+    <span class="badge-role">Teacher</span>
+    <button class="btn-outline-sm" onclick="logout()">Logout</button>
+  </div>
+</nav>
+<div class="teacher-layout">
+  <div class="teacher-card">
+    <h2>📅 Today's Duty</h2>
+    <p id="today-date" style="color:var(--muted);font-size:.85rem;margin-bottom:.8rem"></p>
+    <div id="today-duty"></div>
+  </div>
+  <div class="teacher-card">
+    <h2>📆 This Week</h2>
+    <input type="date" id="week-start" class="date-input" style="margin-bottom:.8rem" onchange="loadWeek()"/>
+    <div id="week-list"></div>
+  </div>
+  <div class="teacher-card" id="link-card" style="display:none">
+    <h2>🔗 System Link</h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:.8rem">Share with colleagues:</p>
+    <div id="link-box"></div>
+  </div>
+</div>
+<script>
+const today = new Date();
+const todayStr = today.toISOString().split('T')[0];
+document.getElementById('today-date').textContent = today.toDateString();
+document.getElementById('week-start').value = todayStr;
+
+async function init() {
+  const r = await fetch('/api/session');
+  const d = await r.json();
+  if(d.type!=='teacher'){window.location.href='/';return;}
+  document.getElementById('nav-name').textContent = d.name;
+  document.getElementById('nav-school').textContent = d.school + ' – Transport System';
+  document.title = d.school + ' Transport';
+  loadToday(); loadWeek(); loadLink();
+}
+
+async function loadToday() {
+  const r = await fetch('/api/roster/teacher?date='+todayStr);
+  const duties = await r.json();
+  const el = document.getElementById('today-duty');
+  const dow = today.getDay();
+  if(dow===0||dow===6){el.innerHTML='<div class="no-duty">🎉 Weekend — No duty today!</div>';return;}
+  if(!duties.length){el.innerHTML='<div class="no-duty">✅ No duty assigned today</div>';return;}
+  el.innerHTML = duties.map(d=>`
+    <div class="duty-card">
+      <div class="duty-route">${d.route_name}</div>
+      <div class="duty-type">${d.is_morning?'🌅 Morning':'🌆 Evening'} Route</div>
+      <div class="status-${d.status}" style="font-size:.82rem;margin-top:.3rem">${d.status.toUpperCase()}</div>
+    </div>`).join('');
+}
+
+async function loadWeek() {
+  const start = document.getElementById('week-start').value;
+  const r = await fetch('/api/roster?date='+start);
+  const data = await r.json();
+  const el = document.getElementById('week-list');
+  if(!data.length){el.innerHTML='<p style="color:var(--muted)">No roster for this date.</p>';return;}
+  el.innerHTML = data.map(a=>`
+    <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--grey)">
+      <span style="font-weight:600">${a.route_name}</span>
+      <span class="status-${a.status}">${a.status}</span>
+    </div>`).join('');
+}
+
+async function loadLink() {
+  const r = await fetch('/api/school/settings');
+  const d = await r.json();
+  if(d.public_link){
+    document.getElementById('link-card').style.display='block';
+    document.getElementById('link-box').innerHTML=`
+      <a href="${d.public_link}" target="_blank"
+        style="display:block;background:var(--sky);color:white;padding:.7rem;border-radius:6px;text-decoration:none;font-size:.85rem;word-break:break-all;margin-bottom:.6rem">
+        ${d.public_link}
+      </a>
+      <button onclick="navigator.clipboard.writeText('${d.public_link}').then(()=>alert('Link copied!'))"
+        style="background:var(--grey);border:none;padding:.4rem 1rem;border-radius:6px;cursor:pointer;font-size:.82rem">
+        📋 Copy Link
+      </button>`;
+  }
+}
+
+async function logout(){await fetch('/api/logout',{method:'POST'});window.location.href='/';}
+init();
+</script>
+</body>
+</html>

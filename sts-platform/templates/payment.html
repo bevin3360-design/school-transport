@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Subscription – STS</title>
+<link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body>
+<nav class="topnav">
+  <div class="nav-left"><span class="nav-logo">🚌</span>
+    <span id="nav-school" class="nav-title">School Transport System</span></div>
+  <div class="nav-right">
+    <button class="btn-outline-sm" onclick="window.location.href='/admin'">← Back to Admin</button>
+    <button class="btn-outline-sm" onclick="logout()">Logout</button>
+  </div>
+</nav>
+<div style="max-width:720px;margin:80px auto;padding:1.5rem">
+
+  <!-- Status Banner -->
+  <div id="status-banner"></div>
+
+  <!-- Plans -->
+  <h2 style="margin-bottom:1rem">Choose a Plan</h2>
+  <div class="plan-grid" id="plan-grid"></div>
+
+  <!-- Payment Instructions -->
+  <div class="payment-card" style="margin-top:1.5rem">
+    <p style="font-size:.85rem;color:var(--gmid);text-transform:uppercase;letter-spacing:.1em">Pay via M-Pesa</p>
+    <div class="mpesa-number" id="mpesa-number"></div>
+    <div class="mpesa-name" id="mpesa-name"></div>
+    <p style="color:var(--gmid);font-size:.85rem;margin-top:.8rem">
+      1. Open M-Pesa → Send Money or Lipa na M-Pesa<br/>
+      2. Enter the number above and the plan amount<br/>
+      3. Copy the M-Pesa confirmation code<br/>
+      4. Paste it below and submit
+    </p>
+  </div>
+
+  <!-- Submit Payment -->
+  <div style="background:var(--white);border-radius:var(--r);padding:1.8rem;box-shadow:var(--sh);margin-top:1.5rem">
+    <h3 style="margin-bottom:1.2rem">Submit Payment Confirmation</h3>
+    <div class="form-group"><label>M-Pesa Transaction Code</label>
+      <input type="text" id="mpesa-code" placeholder="e.g. QHX7K2MNOP" style="text-transform:uppercase"/></div>
+    <div class="form-group"><label>Amount Paid (KES)</label>
+      <input type="number" id="pay-amount" placeholder="e.g. 1500"/></div>
+    <div class="form-group"><label>Plan Selected</label>
+      <select id="pay-plan" class="form-select">
+        <option value="basic">Basic – KES 500/month</option>
+        <option value="standard">Standard – KES 1,500/month</option>
+        <option value="premium">Premium – KES 3,000/month</option>
+      </select></div>
+    <div class="form-group"><label>Your Phone Number (that paid)</label>
+      <input type="text" id="pay-phone" placeholder="e.g. 0712345678"/></div>
+    <button class="btn-primary" onclick="submitPayment()">📤 Submit for Verification</button>
+    <p id="pay-err" class="error-msg hidden"></p>
+    <p id="pay-ok" class="success-msg hidden"></p>
+  </div>
+
+  <!-- Payment History -->
+  <div style="margin-top:1.5rem">
+    <h3 style="margin-bottom:1rem">Payment History</h3>
+    <table class="data-table">
+      <thead><tr><th>M-Pesa Code</th><th>Amount</th><th>Plan</th><th>Status</th><th>Submitted</th></tr></thead>
+      <tbody id="pay-history"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let selectedPlan = 'basic';
+
+async function loadPaymentInfo() {
+  const r = await fetch('/api/payment/info');
+  const d = await r.json();
+  document.getElementById('mpesa-number').textContent = d.mpesa_number;
+  document.getElementById('mpesa-name').textContent = 'Name: ' + d.mpesa_name;
+
+  // Render plans
+  document.getElementById('plan-grid').innerHTML = Object.entries(d.plans).map(([key,p])=>`
+    <div class="plan-card ${key==='basic'?'selected':''}" onclick="selectPlan('${key}',this)">
+      <div class="plan-name">${p.name}</div>
+      <div class="plan-price">KES ${p.price.toLocaleString()}<span style="font-size:.9rem;font-weight:400">/mo</span></div>
+      <div class="plan-features">
+        Up to ${p.teachers===999?'Unlimited':p.teachers} teachers<br/>
+        Up to ${p.routes===999?'Unlimited':p.routes} routes
+      </div>
+    </div>`).join('');
+}
+
+function selectPlan(key, el) {
+  document.querySelectorAll('.plan-card').forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedPlan = key;
+  document.getElementById('pay-plan').value = key;
+  const amounts = {basic:500,standard:1500,premium:3000};
+  document.getElementById('pay-amount').value = amounts[key] || '';
+}
+
+async function loadStatus() {
+  const r = await fetch('/api/payment/status');
+  const d = await r.json();
+  const banner = document.getElementById('status-banner');
+  const cls = {active:'active',trial:'trial',expired:'expired',suspended:'expired'}[d.school_status]||'trial';
+  banner.innerHTML = `
+    <div class="sub-banner ${cls}">
+      <div>
+        <strong>Status: ${d.school_status.toUpperCase()}</strong> — Plan: ${d.plan}<br/>
+        <small>${d.days_remaining} days remaining</small>
+      </div>
+      ${d.days_remaining < 7 ? '<span class="badge-warn">⚠️ Renew Soon</span>' : ''}
+    </div>`;
+
+  // History
+  document.getElementById('pay-history').innerHTML = d.payments.length
+    ? d.payments.map(p=>`<tr>
+        <td><code>${p.mpesa_code}</code></td>
+        <td>KES ${p.amount.toLocaleString()}</td>
+        <td>${p.plan}</td>
+        <td><span class="status-${p.status}">${p.status.toUpperCase()}</span></td>
+        <td style="font-size:.82rem">${p.submitted_at}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1rem">No payments yet.</td></tr>';
+}
+
+async function submitPayment() {
+  const mpesa_code = document.getElementById('mpesa-code').value.trim().toUpperCase();
+  const amount = parseInt(document.getElementById('pay-amount').value);
+  const plan = document.getElementById('pay-plan').value;
+  const phone = document.getElementById('pay-phone').value.trim();
+  const err = document.getElementById('pay-err');
+  const ok = document.getElementById('pay-ok');
+  err.classList.add('hidden'); ok.classList.add('hidden');
+
+  if(!mpesa_code || !amount) {
+    err.textContent='M-Pesa code and amount are required.';err.classList.remove('hidden');return;}
+
+  const r = await fetch('/api/payment/submit',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({mpesa_code,amount,plan,phone})});
+  const d = await r.json();
+  if(d.success){
+    ok.textContent='✅ '+d.message;ok.classList.remove('hidden');
+    document.getElementById('mpesa-code').value='';
+    loadStatus();
+  } else {
+    err.textContent=d.error||'Submission failed.';err.classList.remove('hidden');}
+}
+
+async function logout(){await fetch('/api/logout',{method:'POST'});window.location.href='/';}
+
+const sess = fetch('/api/session').then(r=>r.json()).then(d=>{
+  if(d.type!=='admin'){window.location.href='/';return;}
+  document.getElementById('nav-school').textContent=d.school+' – Transport System';
+});
+
+loadPaymentInfo();
+loadStatus();
+</script>
+</body>
+</html>

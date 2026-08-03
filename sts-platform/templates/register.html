@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Register School – STS</title>
+<link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body>
+<div class="register-wrap">
+  <div class="register-card">
+    <div class="logo-area">
+      <div class="logo-icon">🏫</div>
+      <h1>Register Your School</h1>
+      <p class="subtitle">30-day FREE trial · No credit card needed</p>
+    </div>
+
+    <div class="alert-info">
+      ✅ After registration, you get <strong>30 days free</strong>.
+      To continue, pay via M-Pesa to <strong>0753538323</strong>.
+    </div>
+
+    <div class="form-group"><label>School Full Name</label>
+      <input type="text" id="r-name" placeholder="e.g. Greenfield Academy"/></div>
+    <div class="form-group"><label>School Code (short unique code)</label>
+      <input type="text" id="r-code" placeholder="e.g. GFA001" style="text-transform:uppercase"/></div>
+    <div class="form-group"><label>County / Location</label>
+      <input type="text" id="r-county" placeholder="e.g. Nairobi"/></div>
+    <div class="form-group"><label>School Phone</label>
+      <input type="text" id="r-phone" placeholder="e.g. 0712345678"/></div>
+    <div class="form-group"><label>School Email</label>
+      <input type="email" id="r-email" placeholder="school@email.com"/></div>
+
+    <hr style="margin:1.2rem 0;border:none;border-top:2px solid var(--grey)"/>
+    <p style="font-size:.9rem;font-weight:700;margin-bottom:.8rem;">Admin Account</p>
+
+    <div class="form-group"><label>Admin Username</label>
+      <input type="text" id="r-admin" placeholder="e.g. transport.admin"/></div>
+    <div class="form-group"><label>Admin Password</label>
+      <input type="password" id="r-pw" placeholder="Choose a strong password"/></div>
+    <div class="form-group"><label>Confirm Password</label>
+      <input type="password" id="r-pw2" placeholder="Repeat password"/></div>
+
+    <button class="btn-primary full" onclick="registerSchool()" style="margin-top:.5rem">
+      🚀 Register & Start Free Trial
+    </button>
+    <p id="r-err" class="error-msg hidden"></p>
+    <p id="r-ok" class="success-msg hidden"></p>
+
+    <p style="text-align:center;margin-top:1rem;font-size:.85rem;">
+      Already registered? <a href="/" style="color:var(--sky);font-weight:600;">Login here →</a>
+    </p>
+  </div>
+</div>
+<script>
+async function registerSchool() {
+  const name=document.getElementById('r-name').value.trim();
+  const code=document.getElementById('r-code').value.trim().toUpperCase();
+  const county=document.getElementById('r-county').value.trim();
+  const phone=document.getElementById('r-phone').value.trim();
+  const email=document.getElementById('r-email').value.trim();
+  const admin_username=document.getElementById('r-admin').value.trim();
+  const admin_password=document.getElementById('r-pw').value;
+  const pw2=document.getElementById('r-pw2').value;
+  const err=document.getElementById('r-err');
+  const ok=document.getElementById('r-ok');
+  err.classList.add('hidden'); ok.classList.add('hidden');
+
+  if(!name||!code||!admin_username||!admin_password){
+    err.textContent='School name, code, admin username and password are required.';
+    err.classList.remove('hidden'); return;}
+  if(admin_password!==pw2){
+    err.textContent='Passwords do not match.';err.classList.remove('hidden');return;}
+  if(admin_password.length<6){
+    err.textContent='Password must be at least 6 characters.';err.classList.remove('hidden');return;}
+
+  const r=await fetch('/api/register',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name,code,county,phone,email,admin_username,admin_password})});
+  const d=await r.json();
+  if(d.success){
+    ok.textContent=`✅ ${d.message} Your school code is: ${code}. Trial ends: ${d.trial_end}`;
+    ok.classList.remove('hidden');
+    setTimeout(()=>window.location.href='/',3000);
+  } else {
+    err.textContent=d.error||'Registration failed.';err.classList.remove('hidden');
+  }
+}
+</script>
+</body>
+</html>
