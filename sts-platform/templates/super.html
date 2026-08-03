@@ -25,6 +25,7 @@
       <li class="nav-item" onclick="showSection('schools',this)">🏫 Schools</li>
       <li class="nav-item" onclick="showSection('payments',this)">💳 Payments</li>
       <li class="nav-item" onclick="showSection('logs',this)">📝 Logs</li>
+      <li class="nav-item" onclick="showSection('settings',this)">⚙️ Settings</li>
     </ul>
   </aside>
 
@@ -86,6 +87,46 @@
         <thead><tr><th>Time</th><th>Type</th><th>User</th><th>Action</th><th>IP</th></tr></thead>
         <tbody id="logs-body"></tbody>
       </table>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="section-settings" class="section">
+      <div class="section-header"><h2>⚙️ Platform Settings</h2></div>
+      <div style="background:var(--white);border-radius:var(--r);padding:2rem;max-width:520px;box-shadow:var(--sh)">
+
+        <h3 style="margin-bottom:1.2rem;font-size:1rem;color:var(--black)">📱 M-Pesa Payment Details</h3>
+        <div class="alert-info" style="margin-bottom:1.2rem;font-size:.85rem">
+          This number and name appear on the payment page shown to all school admins.
+        </div>
+        <div class="form-group">
+          <label>M-Pesa Number</label>
+          <input type="text" id="st-mpesa-number" placeholder="e.g. 0753538323"/>
+        </div>
+        <div class="form-group">
+          <label>Account Name (as registered on M-Pesa)</label>
+          <input type="text" id="st-mpesa-name" placeholder="e.g. KEVIN OGUTU"/>
+        </div>
+
+        <hr style="margin:1.5rem 0;border:none;border-top:2px solid var(--grey)"/>
+
+        <h3 style="margin-bottom:1.2rem;font-size:1rem;color:var(--black)">🏢 Platform Details</h3>
+        <div class="form-group">
+          <label>Platform Name</label>
+          <input type="text" id="st-platform-name" placeholder="e.g. School Transport System"/>
+        </div>
+        <div class="form-group">
+          <label>Default Trial Days (for new registrations)</label>
+          <input type="number" id="st-trial-days" min="1" max="365" placeholder="30"/>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:1rem;margin-top:.5rem">
+          <button class="btn-primary" onclick="saveSettings()">💾 Save Settings</button>
+          <span id="st-msg" class="success-msg hidden">✔ Settings saved.</span>
+          <span id="st-err" class="error-msg hidden"></span>
+        </div>
+
+        <div id="st-last-updated" style="margin-top:1rem;font-size:.8rem;color:var(--muted)"></div>
+      </div>
     </section>
 
   </main>

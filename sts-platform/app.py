@@ -28,7 +28,7 @@ db = SQLAlchemy(app)
 
 # ── PAYMENT CONFIG ──────────────────────
 MPESA_NUMBER = "0753538323"
-MPESA_NAME   = "BEN RAY"
+MPESA_NAME   = "KEVIN OGUTU"
 PLANS = {
     'basic':    {'name': 'Basic',    'price': 500,  'teachers': 10, 'routes': 4},
     'standard': {'name': 'Standard', 'price': 1500, 'teachers': 20, 'routes': 8},
@@ -145,6 +145,14 @@ class AuditLog(db.Model):
     action     = db.Column(db.String(300))
     ip         = db.Column(db.String(50))
 
+class PlatformSettings(db.Model):
+    id           = db.Column(db.Integer, primary_key=True)
+    mpesa_number = db.Column(db.String(20),  default='0753538323')
+    mpesa_name   = db.Column(db.String(100), default='KEVIN OGUTU')
+    platform_name= db.Column(db.String(200), default='School Transport System')
+    trial_days   = db.Column(db.Integer,     default=30)
+    updated_at   = db.Column(db.DateTime,    default=datetime.utcnow)
+
 # ════════════════════════════════════════
 # HELPERS
 # ════════════════════════════════════════
@@ -158,6 +166,15 @@ def log_action(school_id, user_type, user_name, action):
 def sanitize(v, ml=200):
     if not v: return ''
     return re.sub(r'[<>\\]', '', str(v).strip()[:ml])
+
+def get_settings():
+    """Always returns the single PlatformSettings row, creating it if missing."""
+    s = PlatformSettings.query.first()
+    if not s:
+        s = PlatformSettings()
+        db.session.add(s)
+        db.session.commit()
+    return s
 
 def is_super(): return session.get('super_id') is not None
 def is_school_admin(): return session.get('school_admin_id') is not None
@@ -376,9 +393,10 @@ def register_school():
 # ════════════════════════════════════════
 @app.route('/api/payment/info')
 def payment_info():
+    s = get_settings()
     return jsonify({
-        'mpesa_number': MPESA_NUMBER,
-        'mpesa_name': MPESA_NAME,
+        'mpesa_number': s.mpesa_number,
+        'mpesa_name':   s.mpesa_name,
         'plans': PLANS
     })
 
@@ -622,6 +640,35 @@ def super_logs():
         'user_name': l.user_name, 'action': l.action, 'ip': l.ip
     } for l in logs])
 
+@app.route('/api/super/settings', methods=['GET'])
+def super_get_settings():
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    s = get_settings()
+    return jsonify({
+        'mpesa_number':  s.mpesa_number,
+        'mpesa_name':    s.mpesa_name,
+        'platform_name': s.platform_name,
+        'trial_days':    s.trial_days,
+        'updated_at':    s.updated_at.strftime('%Y-%m-%d %H:%M') if s.updated_at else ''
+    })
+
+@app.route('/api/super/settings', methods=['PUT'])
+def super_update_settings():
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    data = request.get_json()
+    s = get_settings()
+    if 'mpesa_number'  in data: s.mpesa_number  = sanitize(data['mpesa_number'], 20)
+    if 'mpesa_name'    in data: s.mpesa_name    = sanitize(data['mpesa_name'], 100)
+    if 'platform_name' in data: s.platform_name = sanitize(data['platform_name'], 200)
+    if 'trial_days'    in data:
+        try: s.trial_days = max(1, int(data['trial_days']))
+        except: pass
+    s.updated_at = datetime.utcnow()
+    db.session.commit()
+    log_action(None, 'super', session.get('super_name'),
+               f'Updated platform settings: M-Pesa {s.mpesa_number} / {s.mpesa_name}')
+    return jsonify({'success': True, 'message': 'Settings saved successfully.'})
+
 # ════════════════════════════════════════
 # SCHOOL ADMIN APIs (scoped to school)
 # ════════════════════════════════════════
@@ -629,6 +676,7 @@ def super_logs():
 def school_settings():
     school, err = get_school_or_403()
     if err: return err
+    s = get_settings()
     return jsonify({
         'name': school.name, 'code': school.code,
         'plan': school.plan, 'status': school.status,
@@ -636,8 +684,8 @@ def school_settings():
         'morning_active': school.morning_active,
         'evening_active': school.evening_active,
         'public_link': school.public_link or '',
-        'mpesa_number': MPESA_NUMBER,
-        'mpesa_name': MPESA_NAME,
+        'mpesa_number': s.mpesa_number,
+        'mpesa_name':   s.mpesa_name,
         'plans': PLANS
     })
 
@@ -843,6 +891,10 @@ def init_db():
             db.session.add(sa)
             db.session.commit()
             print('Super admin created: superadmin / STS@2026#Owner')
+        if not PlatformSettings.query.first():
+            db.session.add(PlatformSettings())
+            db.session.commit()
+            print('Platform settings initialised.')
 
 # Always initialise DB — works for both direct run and gunicorn
 init_db()

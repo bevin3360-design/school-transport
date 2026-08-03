@@ -15,6 +15,7 @@ function showSection(name, el) {
   if (name === 'payments') loadPayments();
   if (name === 'logs')     loadLogs();
   if (name === 'dashboard') loadAll();
+  if (name === 'settings') loadSettings();
 }
 
 function openModal(id)  { document.getElementById(id).classList.remove('hidden'); }
@@ -285,6 +286,49 @@ async function loadLogs() {
 async function logout() {
   await fetch('/api/logout', {method:'POST'});
   window.location.href = '/';
+}
+
+// ── SETTINGS ──────────────────────────
+async function loadSettings() {
+  const r = await fetch('/api/super/settings');
+  const d = await r.json();
+  document.getElementById('st-mpesa-number').value  = d.mpesa_number  || '';
+  document.getElementById('st-mpesa-name').value    = d.mpesa_name    || '';
+  document.getElementById('st-platform-name').value = d.platform_name || '';
+  document.getElementById('st-trial-days').value    = d.trial_days    || 30;
+  const lu = document.getElementById('st-last-updated');
+  lu.textContent = d.updated_at ? `Last updated: ${d.updated_at}` : '';
+}
+
+async function saveSettings() {
+  const mpesa_number  = document.getElementById('st-mpesa-number').value.trim();
+  const mpesa_name    = document.getElementById('st-mpesa-name').value.trim().toUpperCase();
+  const platform_name = document.getElementById('st-platform-name').value.trim();
+  const trial_days    = parseInt(document.getElementById('st-trial-days').value) || 30;
+  const msg = document.getElementById('st-msg');
+  const err = document.getElementById('st-err');
+  msg.classList.add('hidden'); err.classList.add('hidden');
+
+  if (!mpesa_number || !mpesa_name) {
+    err.textContent = 'M-Pesa number and name are required.';
+    err.classList.remove('hidden'); return;
+  }
+
+  const r = await fetch('/api/super/settings', {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({mpesa_number, mpesa_name, platform_name, trial_days})
+  });
+  const d = await r.json();
+  if (d.success) {
+    // Update the name field to uppercase after save
+    document.getElementById('st-mpesa-name').value = mpesa_name;
+    msg.classList.remove('hidden');
+    setTimeout(() => msg.classList.add('hidden'), 3000);
+    loadSettings();
+  } else {
+    err.textContent = d.error || 'Failed to save settings.';
+    err.classList.remove('hidden');
+  }
 }
 
 init();
