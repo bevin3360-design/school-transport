@@ -1,5 +1,5 @@
 """
-SCHOOL TRANSPORT SYSTEM — Multi-Tenant Platform
+SCHOOL TRANSPORT SYSTEM — Multi-Tenant Platform v2
 Owner: Super Admin controls all schools
 Payment: M-Pesa to 0753538323
 Trial: 30 days free per school
