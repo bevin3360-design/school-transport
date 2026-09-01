@@ -2,24 +2,33 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Super Admin – STS Platform</title>
-<meta name="theme-color" content="#3B82F6"/>
+<title>My School Transport – Super Admin</title>
+<meta name="theme-color" content="#1a5276"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="STS"/>
+<meta name="apple-mobile-web-app-title" content="My School Transport"/>
 <link rel="manifest" href="/static/manifest.json"/>
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
 <link rel="stylesheet" href="/static/css/style.css"/>
 </head>
 <body class="dash-body">
+
+<!-- update banner -->
+<div id="update-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:3000;
+  background:#1a5276;color:#fff;text-align:center;padding:.7rem;font-size:.9rem;font-weight:600">
+  🔄 A new version is available.
+  <button onclick="applyUpdate()" style="margin-left:1rem;background:#e8a817;color:#000;border:none;
+    padding:.3rem .9rem;border-radius:5px;font-weight:700;cursor:pointer">Update Now</button>
+</div>
+
 <nav class="topnav">
   <div class="nav-left">
     <span class="nav-logo">🚌</span>
-    <span class="nav-title">STS Platform — Super Admin</span>
+    <span class="nav-title">My School Transport — Super Admin</span>
   </div>
   <div class="nav-right">
     <span id="nav-user" class="nav-user"></span>
-    <span class="badge-role" style="background:#8E44AD">OWNER</span>
+    <span class="badge-role" style="background:#8E44AD">DEVELOPER</span>
     <button class="btn-outline-sm" onclick="logout()">Logout</button>
   </div>
 </nav>
@@ -29,6 +38,7 @@
     <ul class="nav-menu">
       <li class="nav-item active" onclick="showSection('dashboard',this)">📊 Dashboard</li>
       <li class="nav-item" onclick="showSection('schools',this)">🏫 Schools</li>
+      <li class="nav-item" onclick="showSection('drill',this)">🔍 School Drill</li>
       <li class="nav-item" onclick="showSection('payments',this)">💳 Payments</li>
       <li class="nav-item" onclick="showSection('logs',this)">📝 Logs</li>
       <li class="nav-item" onclick="showSection('settings',this)">⚙️ Settings</li>
@@ -37,7 +47,7 @@
 
   <main class="main-content">
 
-    <!-- DASHBOARD -->
+    <!-- ═══ DASHBOARD ═══ -->
     <section id="section-dashboard" class="section active">
       <div class="section-header">
         <h2>📊 Platform Overview</h2>
@@ -46,11 +56,14 @@
       <div class="stats-grid" id="stats-grid"></div>
       <div class="alert-info" id="pending-alert" style="display:none">
         ⚠️ You have <strong id="pending-count">0</strong> pending payment(s) to verify.
-        <button class="btn-sm btn-warn" onclick="showSection('payments',document.querySelector('[onclick*=payments]'))">Review Now →</button>
+        <button class="btn-sm btn-warn"
+          onclick="showSection('payments',document.querySelector('[onclick*=payments]'))">
+          Review Now →
+        </button>
       </div>
     </section>
 
-    <!-- SCHOOLS -->
+    <!-- ═══ SCHOOLS ═══ -->
     <section id="section-schools" class="section">
       <div class="section-header">
         <h2>🏫 All Schools</h2>
@@ -68,7 +81,53 @@
       </table>
     </section>
 
-    <!-- PAYMENTS -->
+    <!-- ═══ SCHOOL DRILL-DOWN ═══ -->
+    <section id="section-drill" class="section">
+      <div class="section-header">
+        <h2>🔍 School Drill-Down</h2>
+        <span style="font-size:.85rem;color:var(--muted)">View any school's live data</span>
+      </div>
+      <!-- School picker -->
+      <div style="display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;margin-bottom:1.4rem">
+        <select id="drill-school-select" class="form-select" style="min-width:220px;max-width:320px">
+          <option value="">— Select a School —</option>
+        </select>
+        <input type="date" id="drill-date" class="date-input"/>
+        <button class="btn-primary" onclick="loadDrillData()">🔍 Load</button>
+      </div>
+      <div id="drill-school-name" style="font-size:1.1rem;font-weight:700;color:var(--black);margin-bottom:1rem"></div>
+
+      <!-- Drill sub-tabs -->
+      <div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap" id="drill-tabs" style="display:none">
+        <button class="btn-sm btn-edit drill-tab active" onclick="showDrillTab('roster',this)">📋 Roster</button>
+        <button class="btn-sm btn-edit drill-tab" onclick="showDrillTab('teachers',this)">👩‍🏫 Teachers</button>
+        <button class="btn-sm btn-edit drill-tab" onclick="showDrillTab('routes',this)">🗺️ Routes</button>
+      </div>
+
+      <!-- Drill: Roster -->
+      <div id="drill-roster" class="drill-panel">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>Teacher</th><th>Code</th><th>Route</th><th>Type</th><th>Status</th></tr></thead>
+          <tbody id="drill-roster-body"><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:2rem">Select a school above</td></tr></tbody>
+        </table>
+      </div>
+      <!-- Drill: Teachers -->
+      <div id="drill-teachers" class="drill-panel" style="display:none">
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Code</th><th>Authorised</th><th>Active</th></tr></thead>
+          <tbody id="drill-teachers-body"></tbody>
+        </table>
+      </div>
+      <!-- Drill: Routes -->
+      <div id="drill-routes" class="drill-panel" style="display:none">
+        <table class="data-table">
+          <thead><tr><th>Route</th><th>Description</th><th>Morning</th><th>Active</th></tr></thead>
+          <tbody id="drill-routes-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══ PAYMENTS ═══ -->
     <section id="section-payments" class="section">
       <div class="section-header">
         <h2>💳 Payment Requests</h2>
@@ -83,34 +142,8 @@
       </table>
     </section>
 
-    <!-- SETTINGS -->
-    <section id="section-settings" class="section">
-      <div class="section-header">
-        <h2>⚙️ Platform Settings</h2>
-        <button class="btn-outline" onclick="loadSettings()">🔄 Refresh</button>
-      </div>
-      <div class="card" style="max-width:520px">
-        <h3 style="margin-bottom:1.2rem;font-size:1rem">💳 M-Pesa Payment Details</h3>
-        <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem">
-          This is the number schools send payment to. It appears on the payment page for every school.
-        </p>
-        <div class="form-group"><label>M-Pesa Number</label>
-          <input type="text" id="set-mpesa-number" placeholder="e.g. 0753538323" maxlength="15"/></div>
-        <div class="form-group"><label>Account Name (as registered on M-Pesa)</label>
-          <input type="text" id="set-mpesa-name" placeholder="e.g. KEVIN OGUTU" maxlength="100"/></div>
-        <hr style="margin:1.2rem 0;border:none;border-top:2px solid var(--grey)"/>
-        <h3 style="margin-bottom:1.2rem;font-size:1rem">🏢 Platform Details</h3>
-        <div class="form-group"><label>Platform Name</label>
-          <input type="text" id="set-platform-name" placeholder="School Transport System" maxlength="200"/></div>
-        <div class="form-group"><label>Default Trial Days for New Schools</label>
-          <input type="number" id="set-trial-days" min="1" max="365" placeholder="30"/></div>
-        <p id="set-updated" style="font-size:.8rem;color:var(--muted);margin-top:.5rem"></p>
-        <p id="set-err" class="error-msg hidden"></p>
-        <div style="margin-top:1rem">
-          <button class="btn-primary" onclick="saveSettings()">💾 Save Settings</button>
-        </div>
-      </div>
-    </section>
+    <!-- ═══ LOGS ═══ -->
+    <section id="section-logs" class="section">
       <div class="section-header">
         <h2>📝 Audit Logs</h2>
         <button class="btn-outline" onclick="loadLogs()">🔄 Refresh</button>
@@ -119,6 +152,35 @@
         <thead><tr><th>Time</th><th>Type</th><th>User</th><th>Action</th><th>IP</th></tr></thead>
         <tbody id="logs-body"></tbody>
       </table>
+    </section>
+
+    <!-- ═══ SETTINGS ═══ -->
+    <section id="section-settings" class="section">
+      <div class="section-header">
+        <h2>⚙️ Platform Settings</h2>
+        <button class="btn-outline" onclick="loadSettings()">🔄 Refresh</button>
+      </div>
+      <div class="card" style="max-width:520px;background:var(--white);border-radius:var(--r);padding:1.8rem;box-shadow:var(--sh)">
+        <h3 style="margin-bottom:1.2rem;font-size:1rem">💳 M-Pesa Payment Details</h3>
+        <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem">
+          This number appears on every school's payment page.
+        </p>
+        <div class="form-group"><label>M-Pesa Number</label>
+          <input type="text" id="set-mpesa-number" placeholder="0753538323" maxlength="15"/></div>
+        <div class="form-group"><label>Account Name</label>
+          <input type="text" id="set-mpesa-name" placeholder="KEVIN OGUTU" maxlength="100"/></div>
+        <hr style="margin:1.2rem 0;border:none;border-top:2px solid var(--grey)"/>
+        <h3 style="margin-bottom:1.2rem;font-size:1rem">🏢 Platform</h3>
+        <div class="form-group"><label>Platform Name</label>
+          <input type="text" id="set-platform-name" placeholder="My School Transport" maxlength="200"/></div>
+        <div class="form-group"><label>Default Trial Days</label>
+          <input type="number" id="set-trial-days" min="1" max="365" placeholder="30"/></div>
+        <p id="set-updated" style="font-size:.8rem;color:var(--muted);margin-top:.5rem"></p>
+        <p id="set-err" class="error-msg hidden"></p>
+        <div style="margin-top:1rem">
+          <button class="btn-primary" onclick="saveSettings()">💾 Save Settings</button>
+        </div>
+      </div>
     </section>
 
   </main>
@@ -222,7 +284,7 @@
     </div>
     <input type="hidden" id="rp-id"/>
     <div class="alert-warn" style="margin-bottom:1rem">
-      This will immediately change the login password for this school's admin.
+      This immediately changes the school admin's login password.
     </div>
     <div class="form-group"><label>School</label>
       <input type="text" id="rp-school-name" readonly style="background:var(--grey)"/></div>

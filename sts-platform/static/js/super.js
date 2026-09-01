@@ -4,6 +4,30 @@ async function init() {
   if (d.type !== 'super') { window.location.href = '/'; return; }
   document.getElementById('nav-user').textContent = d.name;
   loadAll();
+  populateDrillSchools();
+  // Set drill date to today
+  document.getElementById('drill-date').value = new Date().toISOString().split('T')[0];
+  // Service worker update
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js').then(reg => {
+      window._swReg = reg;
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+            document.getElementById('update-banner').style.display = 'block';
+          }
+        });
+      });
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+  }
+}
+
+function applyUpdate() {
+  if (window._swReg && window._swReg.waiting) {
+    window._swReg.waiting.postMessage({ type: 'SKIP_WAITING' });
+  }
 }
 
 function showSection(name, el) {
@@ -16,6 +40,7 @@ function showSection(name, el) {
   if (name === 'logs')      loadLogs();
   if (name === 'dashboard') loadAll();
   if (name === 'settings')  loadSettings();
+  if (name === 'drill')     populateDrillSchools();
 }
 
 function openModal(id)  { document.getElementById(id).classList.remove('hidden'); }
@@ -319,6 +344,79 @@ async function saveSettings() {
     err.textContent = d.error || 'Failed to save settings.';
     err.classList.remove('hidden');
   }
+}
+
+// ── DRILL-DOWN ────────────────────────
+async function populateDrillSchools() {
+  const r = await fetch('/api/super/schools');
+  const data = await r.json();
+  const sel = document.getElementById('drill-school-select');
+  sel.innerHTML = '<option value="">— Select a School —</option>' +
+    data.map(s => `<option value="${s.id}">${s.name} (${s.code})</option>`).join('');
+}
+
+function showDrillTab(tab, btn) {
+  document.querySelectorAll('.drill-panel').forEach(p => p.style.display = 'none');
+  document.querySelectorAll('.drill-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('drill-' + tab).style.display = 'block';
+  btn.classList.add('active');
+}
+
+async function loadDrillData() {
+  const sid  = document.getElementById('drill-school-select').value;
+  const date = document.getElementById('drill-date').value;
+  if (!sid) { alert('Please select a school.'); return; }
+
+  // Show tabs
+  document.getElementById('drill-tabs').style.display = 'flex';
+
+  // Get school name
+  const sel = document.getElementById('drill-school-select');
+  document.getElementById('drill-school-name').textContent =
+    '🏫 ' + sel.options[sel.selectedIndex].text;
+
+  // Load all three in parallel
+  const [rRoster, rTeachers, rRoutes] = await Promise.all([
+    fetch(`/api/super/school/${sid}/roster?date=${date}`),
+    fetch(`/api/super/school/${sid}/teachers`),
+    fetch(`/api/super/school/${sid}/routes`)
+  ]);
+
+  const roster   = await rRoster.json();
+  const teachers = await rTeachers.json();
+  const routes   = await rRoutes.json();
+
+  // Render roster
+  document.getElementById('drill-roster-body').innerHTML = roster.length
+    ? roster.map((a, i) => `<tr>
+        <td>${i+1}</td>
+        <td><strong>${a.teacher_name}</strong></td>
+        <td><code>${a.teaching_code}</code></td>
+        <td>${a.route_name}</td>
+        <td>${a.is_morning ? '🌅 Morning' : '🌆 Evening'}</td>
+        <td><span class="status-${a.status}">${a.status.toUpperCase()}</span></td>
+      </tr>`).join('')
+    : '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1.5rem">No roster for this date</td></tr>';
+
+  // Render teachers
+  document.getElementById('drill-teachers-body').innerHTML = teachers.length
+    ? teachers.map(t => `<tr>
+        <td><strong>${t.name}</strong></td>
+        <td><code>${t.teaching_code}</code></td>
+        <td>${t.authorised ? '<span style="color:var(--success)">✔ Yes</span>' : '<span style="color:var(--red)">✘ No</span>'}</td>
+        <td>${t.active ? '<span style="color:var(--success)">Active</span>' : '<span style="color:var(--muted)">Inactive</span>'}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1.5rem">No teachers</td></tr>';
+
+  // Render routes
+  document.getElementById('drill-routes-body').innerHTML = routes.length
+    ? routes.map(r => `<tr>
+        <td><strong>${r.name}</strong></td>
+        <td>${r.description || '—'}</td>
+        <td>${r.is_morning ? '🌅 Yes' : '—'}</td>
+        <td>${r.active ? '<span style="color:var(--success)">Active</span>' : '<span style="color:var(--muted)">Inactive</span>'}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1.5rem">No routes</td></tr>';
 }
 
 // ── LOGOUT ────────────────────────────

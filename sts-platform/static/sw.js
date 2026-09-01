@@ -1,5 +1,8 @@
-const CACHE = 'sts-v1';
-const ASSETS = [
+// My School Transport — Service Worker v2
+// Supports: offline caching, auto-update notification, skip waiting on demand
+
+const CACHE_NAME = 'mst-v2';
+const STATIC_ASSETS = [
   '/',
   '/static/css/style.css',
   '/static/js/admin.js',
@@ -9,34 +12,79 @@ const ASSETS = [
   '/static/icons/icon-512.png'
 ];
 
-self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(ASSETS)).catch(() => {})
+// ── INSTALL: cache static assets ────────
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(STATIC_ASSETS))
+      .catch(() => {})   // don't fail install if a resource is missing
   );
-  self.skipWaiting();
+  // Do NOT call skipWaiting here — wait for user to trigger update
 });
 
-self.addEventListener('activate', e => {
-  e.waitUntil(
+// ── ACTIVATE: clean old caches ──────────
+self.addEventListener('activate', event => {
+  event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+      Promise.all(
+        keys
+          .filter(k => k !== CACHE_NAME)
+          .map(k => caches.delete(k))
+      )
     )
   );
   self.clients.claim();
 });
 
-self.addEventListener('fetch', e => {
-  // Only cache GET requests; always go network-first for API calls
-  if (e.request.method !== 'GET') return;
-  if (e.request.url.includes('/api/')) return;
+// ── MESSAGE: handle skip-waiting ────────
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 
-  e.respondWith(
-    fetch(e.request)
-      .then(res => {
-        const clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
-        return res;
+// ── FETCH: network-first for API, cache-first for static ──
+self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+
+  const url = new URL(event.request.url);
+
+  // Always go network-first for API calls — never serve stale API data
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        return new Response(
+          JSON.stringify({ error: 'You are offline. Please check your connection.' }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } }
+        );
       })
-      .catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
+  // For HTML pages — network first, fallback to cache
+  if (event.request.headers.get('accept').includes('text/html')) {
+    event.respondWith(
+      fetch(event.request)
+        .then(res => {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
+          return res;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // For static assets — cache first, then network
+  event.respondWith(
+    caches.match(event.request).then(cached => {
+      if (cached) return cached;
+      return fetch(event.request).then(res => {
+        const clone = res.clone();
+        caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
+        return res;
+      });
+    })
   );
 });

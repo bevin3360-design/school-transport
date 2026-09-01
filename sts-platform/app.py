@@ -1,5 +1,5 @@
-"""
-SCHOOL TRANSPORT SYSTEM — Multi-Tenant Platform v2
+﻿"""
+SCHOOL TRANSPORT SYSTEM â€” Multi-Tenant Platform v2
 Owner: Super Admin controls all schools
 Payment: M-Pesa to 0753538323
 Trial: 30 days free per school
@@ -26,7 +26,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 CORS(app)
 db = SQLAlchemy(app)
 
-# ── PAYMENT CONFIG ──────────────────────
+# â”€â”€ PAYMENT CONFIG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 MPESA_NUMBER = "0753538323"
 MPESA_NAME   = "KEVIN OGUTU"
 PLANS = {
@@ -36,9 +36,9 @@ PLANS = {
 }
 TRIAL_DAYS = 30
 
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # MODELS
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class School(db.Model):
     id            = db.Column(db.Integer, primary_key=True)
@@ -148,14 +148,16 @@ class AuditLog(db.Model):
 class PlatformSettings(db.Model):
     id           = db.Column(db.Integer, primary_key=True)
     mpesa_number = db.Column(db.String(20),  default='0753538323')
-    mpesa_name   = db.Column(db.String(100), default='BEN RAY')
+    mpesa_name   = db.Column(db.String(100), default='KEVIN OGUTU')
     platform_name= db.Column(db.String(200), default='School Transport System')
     trial_days   = db.Column(db.Integer,     default=30)
     updated_at   = db.Column(db.DateTime,    default=datetime.utcnow)
 
-# ════════════════════════════════════════
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # HELPERS
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 def log_action(school_id, user_type, user_name, action):
     db.session.add(AuditLog(
         school_id=school_id, user_type=user_type,
@@ -190,7 +192,7 @@ def get_school_or_403():
 
 def is_weekend(d): return d.weekday() >= 5
 
-# ── ALLOCATION ALGORITHM ────────────────
+# â”€â”€ ALLOCATION ALGORITHM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def generate_roster(school_id, target_date):
     if is_weekend(target_date): return []
     school = School.query.get(school_id)
@@ -248,9 +250,9 @@ def save_roster(school_id, assignments, target_date):
             is_morning=a['is_morning'], status='assigned'))
     db.session.commit()
 
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # PAGES
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -279,9 +281,9 @@ def payment_page():
     if not is_school_admin(): return redirect('/')
     return render_template('payment.html')
 
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # AUTH APIs
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 @app.route('/api/super/login', methods=['POST'])
 def super_login():
     data = request.get_json()
@@ -353,9 +355,9 @@ def check_session():
                         'school_id': session.get('school_id')})
     return jsonify({'type': None})
 
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # SCHOOL REGISTRATION
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 @app.route('/api/register', methods=['POST'])
 def register_school():
     data = request.get_json()
@@ -388,9 +390,9 @@ def register_school():
                     'trial_end': trial_end.isoformat(),
                     'message': f'Welcome! Your 30-day free trial starts today.'})
 
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # PAYMENT APIs
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 @app.route('/api/payment/info')
 def payment_info():
     s = get_settings()
@@ -441,9 +443,9 @@ def payment_status():
         } for p in payments]
     })
 
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # SUPER ADMIN APIs
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 @app.route('/api/super/schools')
 def super_schools():
     if not is_super(): return jsonify({'error':'Unauthorised'}), 403
@@ -486,7 +488,7 @@ def verify_payment(pid):
     school.subscription_end = current_end + timedelta(days=30)
     db.session.commit()
     log_action(None, 'super', session.get('super_name'),
-               f'Verified payment {p.mpesa_code} for {school.name} — activated {p.plan} until {school.subscription_end}')
+               f'Verified payment {p.mpesa_code} for {school.name} â€” activated {p.plan} until {school.subscription_end}')
     return jsonify({'success': True,
                     'message': f'{school.name} activated on {p.plan} plan until {school.subscription_end}'})
 
@@ -669,9 +671,9 @@ def super_update_settings():
                f'Updated platform settings: M-Pesa {s.mpesa_number} / {s.mpesa_name}')
     return jsonify({'success': True, 'message': 'Settings saved successfully.'})
 
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # SCHOOL ADMIN APIs (scoped to school)
-# ════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 @app.route('/api/school/settings', methods=['GET'])
 def school_settings():
     school, err = get_school_or_403()
@@ -869,6 +871,60 @@ def get_logs():
                      'user_type':l.user_type,'user_name':l.user_name,
                      'action':l.action,'ip':l.ip} for l in logs])
 
+# â”€â”€ Teacher week roster (own duties only) â”€
+@app.route('/api/roster/teacher/week')
+def teacher_week_roster():
+    if not session.get('teacher_id'): return jsonify({'error':'Unauthorised'}), 403
+    # Return Monâ€“Fri for the week containing 'date' param
+    base = date.fromisoformat(request.args.get('date', date.today().isoformat()))
+    # Find Monday of that week
+    monday = base - timedelta(days=base.weekday())
+    week = []
+    for i in range(5):
+        day = monday + timedelta(days=i)
+        assignments = DutyAssignment.query.filter_by(
+            school_id=session['school_id'],
+            teacher_id=session['teacher_id'],
+            duty_date=day).all()
+        week.append({
+            'date': day.isoformat(),
+            'day': day.strftime('%A'),
+            'short': day.strftime('%a %d %b'),
+            'duties': [{'route_name': a.route.name, 'is_morning': a.is_morning,
+                        'status': a.status} for a in assignments]
+        })
+    return jsonify(week)
+
+# â”€â”€ Super admin: view any school's roster â”€
+@app.route('/api/super/school/<int:sid>/roster')
+def super_view_roster(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    target = date.fromisoformat(request.args.get('date', date.today().isoformat()))
+    assignments = DutyAssignment.query.filter_by(school_id=sid, duty_date=target).all()
+    return jsonify([{
+        'id': a.id, 'teacher_name': a.teacher.name,
+        'teaching_code': a.teacher.teaching_code,
+        'route_name': a.route.name, 'is_morning': a.is_morning,
+        'status': a.status, 'duty_date': a.duty_date.isoformat()
+    } for a in assignments])
+
+# â”€â”€ Super admin: view any school's teachers â”€
+@app.route('/api/super/school/<int:sid>/teachers')
+def super_view_teachers(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    teachers = Teacher.query.filter_by(school_id=sid).all()
+    return jsonify([{'id': t.id, 'name': t.name, 'teaching_code': t.teaching_code,
+                     'active': t.active, 'authorised': t.authorised} for t in teachers])
+
+# â”€â”€ Super admin: view any school's routes â”€
+@app.route('/api/super/school/<int:sid>/routes')
+def super_view_routes(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    routes = Route.query.filter_by(school_id=sid).all()
+    return jsonify([{'id': r.id, 'name': r.name, 'description': r.description,
+                     'is_morning': r.is_morning, 'active': r.active} for r in routes])
+
+
 # ════════════════════════════════════════
 # SECURITY HEADERS
 # ════════════════════════════════════════
@@ -896,7 +952,7 @@ def init_db():
             db.session.commit()
             print('Platform settings initialised.')
 
-# Always initialise DB — works for both direct run and gunicorn
+# Always initialise DB
 init_db()
 
 if __name__ == '__main__':

@@ -1,11 +1,11 @@
 {
-  "name": "School Transport System",
-  "short_name": "STS",
-  "description": "Manage school transport — allocate routes, track teachers, handle payments.",
+  "name": "My School Transport",
+  "short_name": "My Transport",
+  "description": "Manage school transport routes, allocate teachers, generate rosters and track duties.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f1117",
-  "theme_color": "#3B82F6",
+  "background_color": "#1a5276",
+  "theme_color": "#1a5276",
   "orientation": "portrait-primary",
   "icons": [
     {
@@ -24,12 +24,14 @@
   "shortcuts": [
     {
       "name": "Teacher Login",
-      "url": "/?role=teacher",
-      "description": "Log in as a teacher"
+      "short_name": "Teacher",
+      "url": "/",
+      "description": "Log in as a teacher to view your duties"
     },
     {
-      "name": "Admin Login",
-      "url": "/?role=admin",
+      "name": "School Admin",
+      "short_name": "Admin",
+      "url": "/",
       "description": "Log in as school admin"
     }
   ]

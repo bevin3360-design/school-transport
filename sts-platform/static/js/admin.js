@@ -204,3 +204,23 @@ async function saveSettings(){
 }
 async function logout(){await fetch('/api/logout',{method:'POST'});window.location.href='/';}
 init();
+
+// Service worker auto-update
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js').then(reg => {
+    window._swReg = reg;
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+          const b = document.createElement('div');
+          b.id = 'update-bar';
+          b.style.cssText = 'position:fixed;top:58px;left:0;right:0;z-index:2000;background:#1a5276;color:#fff;text-align:center;padding:.7rem;font-size:.9rem;font-weight:600';
+          b.innerHTML = '🔄 New version available. <button onclick="if(window._swReg&&window._swReg.waiting)window._swReg.waiting.postMessage({type:\'SKIP_WAITING\'})" style="margin-left:1rem;background:#e8a817;color:#000;border:none;padding:.3rem .9rem;border-radius:5px;font-weight:700;cursor:pointer">Update Now</button>';
+          document.body.prepend(b);
+        }
+      });
+    });
+  });
+  navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+}

@@ -2,104 +2,181 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>My Duties – STS</title>
-<meta name="theme-color" content="#3B82F6"/>
+<title>My School Transport – Duties</title>
+<meta name="theme-color" content="#1a5276"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="STS"/>
+<meta name="apple-mobile-web-app-title" content="My School Transport"/>
 <link rel="manifest" href="/static/manifest.json"/>
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
 <link rel="stylesheet" href="/static/css/style.css"/>
 </head>
 <body class="dash-body">
+
+<!-- update banner -->
+<div id="update-banner" style="display:none;position:fixed;top:58px;left:0;right:0;z-index:2000;
+  background:#1a5276;color:#fff;text-align:center;padding:.7rem;font-size:.9rem;font-weight:600">
+  🔄 A new version is available.
+  <button onclick="applyUpdate()" style="margin-left:1rem;background:#e8a817;color:#000;border:none;
+    padding:.3rem .9rem;border-radius:5px;font-weight:700;cursor:pointer">Update Now</button>
+</div>
+
 <nav class="topnav">
-  <div class="nav-left"><span class="nav-logo">🚌</span>
-    <span id="nav-school" class="nav-title">School Transport System</span></div>
+  <div class="nav-left">
+    <span class="nav-logo">🚌</span>
+    <span id="nav-school" class="nav-title">My School Transport</span>
+  </div>
   <div class="nav-right">
     <span id="nav-name" class="nav-user"></span>
-    <span class="badge-role">Teacher</span>
+    <span class="badge-role" style="background:#1a5276">TEACHER</span>
     <button class="btn-outline-sm" onclick="logout()">Logout</button>
   </div>
 </nav>
+
 <div class="teacher-layout">
+
+  <!-- TODAY'S DUTY -->
   <div class="teacher-card">
-    <h2>📅 Today's Duty</h2>
+    <h2 style="margin-bottom:.3rem">📅 Today's Duty</h2>
     <p id="today-date" style="color:var(--muted);font-size:.85rem;margin-bottom:.8rem"></p>
     <div id="today-duty"></div>
   </div>
+
+  <!-- MY WEEK -->
   <div class="teacher-card">
-    <h2>📆 This Week</h2>
-    <input type="date" id="week-start" class="date-input" style="margin-bottom:.8rem" onchange="loadWeek()"/>
+    <h2 style="margin-bottom:.6rem">📆 My Week</h2>
+    <input type="date" id="week-pick" class="date-input" style="margin-bottom:.8rem;width:100%" onchange="loadMyWeek()"/>
     <div id="week-list"></div>
   </div>
+
+  <!-- SCHOOL LINK -->
   <div class="teacher-card" id="link-card" style="display:none">
-    <h2>🔗 System Link</h2>
+    <h2 style="margin-bottom:.5rem">🔗 System Link</h2>
     <p style="font-size:.85rem;color:var(--muted);margin-bottom:.8rem">Share with colleagues:</p>
     <div id="link-box"></div>
   </div>
+
 </div>
+
 <script>
 const today = new Date();
 const todayStr = today.toISOString().split('T')[0];
-document.getElementById('today-date').textContent = today.toDateString();
-document.getElementById('week-start').value = todayStr;
+document.getElementById('today-date').textContent = today.toLocaleDateString('en-KE',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+document.getElementById('week-pick').value = todayStr;
 
-async function init() {
-  const r = await fetch('/api/session');
-  const d = await r.json();
-  if(d.type!=='teacher'){window.location.href='/';return;}
-  document.getElementById('nav-name').textContent = d.name;
-  document.getElementById('nav-school').textContent = d.school + ' – Transport System';
-  document.title = d.school + ' Transport';
-  loadToday(); loadWeek(); loadLink();
+let swReg = null;
+
+// ── SERVICE WORKER ──────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js').then(reg => {
+    swReg = reg;
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+          document.getElementById('update-banner').style.display = 'block';
+        }
+      });
+    });
+  });
+  navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
 }
-
-async function loadToday() {
-  const r = await fetch('/api/roster/teacher?date='+todayStr);
-  const duties = await r.json();
-  const el = document.getElementById('today-duty');
-  const dow = today.getDay();
-  if(dow===0||dow===6){el.innerHTML='<div class="no-duty">🎉 Weekend — No duty today!</div>';return;}
-  if(!duties.length){el.innerHTML='<div class="no-duty">✅ No duty assigned today</div>';return;}
-  el.innerHTML = duties.map(d=>`
-    <div class="duty-card">
-      <div class="duty-route">${d.route_name}</div>
-      <div class="duty-type">${d.is_morning?'🌅 Morning':'🌆 Evening'} Route</div>
-      <div class="status-${d.status}" style="font-size:.82rem;margin-top:.3rem">${d.status.toUpperCase()}</div>
-    </div>`).join('');
-}
-
-async function loadWeek() {
-  const start = document.getElementById('week-start').value;
-  const r = await fetch('/api/roster?date='+start);
-  const data = await r.json();
-  const el = document.getElementById('week-list');
-  if(!data.length){el.innerHTML='<p style="color:var(--muted)">No roster for this date.</p>';return;}
-  el.innerHTML = data.map(a=>`
-    <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--grey)">
-      <span style="font-weight:600">${a.route_name}</span>
-      <span class="status-${a.status}">${a.status}</span>
-    </div>`).join('');
-}
-
-async function loadLink() {
-  const r = await fetch('/api/school/settings');
-  const d = await r.json();
-  if(d.public_link){
-    document.getElementById('link-card').style.display='block';
-    document.getElementById('link-box').innerHTML=`
-      <a href="${d.public_link}" target="_blank"
-        style="display:block;background:var(--sky);color:white;padding:.7rem;border-radius:6px;text-decoration:none;font-size:.85rem;word-break:break-all;margin-bottom:.6rem">
-        ${d.public_link}
-      </a>
-      <button onclick="navigator.clipboard.writeText('${d.public_link}').then(()=>alert('Link copied!'))"
-        style="background:var(--grey);border:none;padding:.4rem 1rem;border-radius:6px;cursor:pointer;font-size:.82rem">
-        📋 Copy Link
-      </button>`;
+function applyUpdate() {
+  if (swReg && swReg.waiting) {
+    swReg.waiting.postMessage({ type: 'SKIP_WAITING' });
   }
 }
 
-async function logout(){await fetch('/api/logout',{method:'POST'});window.location.href='/';}
+// ── INIT ────────────────────────────────
+async function init() {
+  const r = await fetch('/api/session');
+  const d = await r.json();
+  if (d.type !== 'teacher') { window.location.href = '/'; return; }
+  document.getElementById('nav-name').textContent = d.name;
+  document.getElementById('nav-school').textContent = d.school + ' — My School Transport';
+  document.title = d.school + ' | My School Transport';
+  loadToday();
+  loadMyWeek();
+  loadLink();
+}
+
+// ── TODAY ────────────────────────────────
+async function loadToday() {
+  const r = await fetch('/api/roster/teacher?date=' + todayStr);
+  const duties = await r.json();
+  const el = document.getElementById('today-duty');
+  const dow = today.getDay();
+  if (dow === 0 || dow === 6) {
+    el.innerHTML = '<div class="no-duty">🎉 Weekend — No duty today!</div>'; return;
+  }
+  if (!duties.length) {
+    el.innerHTML = '<div class="no-duty">✅ No duty assigned for today</div>'; return;
+  }
+  el.innerHTML = duties.map(d => `
+    <div class="duty-card">
+      <div class="duty-route">🚌 ${d.route_name}</div>
+      <div class="duty-type">${d.is_morning ? '🌅 Morning Route' : '🌆 Evening Route'}</div>
+      <span class="status-${d.status}" style="font-size:.82rem;margin-top:.3rem;display:block">
+        ${d.status.toUpperCase()}
+      </span>
+    </div>`).join('');
+}
+
+// ── MY WEEK (own duties only) ────────────
+async function loadMyWeek() {
+  const pick = document.getElementById('week-pick').value || todayStr;
+  const r = await fetch('/api/roster/teacher/week?date=' + pick);
+  const week = await r.json();
+  const el = document.getElementById('week-list');
+  if (!week || week.error) {
+    el.innerHTML = '<p style="color:var(--muted)">Could not load week.</p>'; return;
+  }
+  el.innerHTML = week.map(day => {
+    const isToday = day.date === todayStr;
+    const header = `<div style="font-weight:700;font-size:.9rem;
+      color:${isToday ? 'var(--sky)' : 'var(--text)'};
+      padding:.5rem 0;border-bottom:2px solid ${isToday ? 'var(--sky)' : 'var(--grey)'};
+      margin-bottom:.4rem">
+      ${isToday ? '📍 ' : ''}${day.short}
+    </div>`;
+    const duties = day.duties.length
+      ? day.duties.map(d => `
+          <div style="display:flex;justify-content:space-between;align-items:center;
+            padding:.35rem .5rem;background:var(--sky-light);border-radius:5px;margin-bottom:.3rem;font-size:.85rem">
+            <span>🚌 <strong>${d.route_name}</strong>
+              <span style="color:var(--muted);font-size:.78rem">&nbsp;${d.is_morning ? '🌅' : '🌆'}</span>
+            </span>
+            <span class="status-${d.status}">${d.status}</span>
+          </div>`).join('')
+      : '<p style="font-size:.82rem;color:var(--muted);padding:.2rem 0">No duty</p>';
+    return `<div style="margin-bottom:.6rem">${header}${duties}</div>`;
+  }).join('');
+}
+
+// ── SCHOOL LINK ──────────────────────────
+async function loadLink() {
+  try {
+    const r = await fetch('/api/school/settings');
+    const d = await r.json();
+    if (d.public_link) {
+      document.getElementById('link-card').style.display = 'block';
+      document.getElementById('link-box').innerHTML = `
+        <a href="${d.public_link}" target="_blank"
+          style="display:block;background:var(--sky);color:white;padding:.7rem;
+          border-radius:6px;text-decoration:none;font-size:.85rem;
+          word-break:break-all;margin-bottom:.6rem">${d.public_link}</a>
+        <button onclick="navigator.clipboard.writeText('${d.public_link}').then(()=>alert('Copied!'))"
+          style="background:var(--grey);border:none;padding:.4rem 1rem;
+          border-radius:6px;cursor:pointer;font-size:.82rem">📋 Copy</button>`;
+    }
+  } catch(e) {}
+}
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/';
+}
+
 init();
 </script>
 </body>
