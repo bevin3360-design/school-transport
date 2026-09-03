@@ -65,6 +65,11 @@
     <div style="text-align:center;margin-top:1.5rem;font-size:.78rem;color:var(--muted);">
       <span class="badge-red">MST</span> Secure · Role-Based · Multi-School
     </div>
+
+    <!-- Install App Button -->
+    <button id="install-btn" class="btn-primary full" style="display:none;margin-top:1rem;background:linear-gradient(135deg,#2ecc71,#27ae60);border:none;box-shadow:0 4px 12px rgba(46,204,113,0.3);" onclick="installApp()">
+      📱 Install App on This Device
+    </button>
   </div>
 </div>
 <script>
@@ -115,6 +120,39 @@ document.addEventListener('keydown',e=>{
   else if(active==='tab-admin')adminLogin();
   else superLogin();
 });
+// ── PWA Install Prompt ──────────────────────────────
+let deferredPrompt;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('install-btn').style.display = 'block';
+});
+
+async function installApp() {
+  if (!deferredPrompt) {
+    alert('App is already installed or not installable on this device');
+    return;
+  }
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if (outcome === 'accepted') {
+    document.getElementById('install-btn').style.display = 'none';
+  }
+  deferredPrompt = null;
+}
+
+// Hide button if already installed
+window.addEventListener('appinstalled', () => {
+  document.getElementById('install-btn').style.display = 'none';
+});
+
+// Check if already installed (iOS/Safari)
+if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+  document.getElementById('install-btn').style.display = 'none';
+}
+
+// ── Service Worker Registration ──────────────────────
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/static/sw.js').catch(()=>{});
 }
