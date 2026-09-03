@@ -153,6 +153,71 @@ class PlatformSettings(db.Model):
     trial_days   = db.Column(db.Integer,     default=30)
     updated_at   = db.Column(db.DateTime,    default=datetime.utcnow)
 
+# â"€â"€ GPS TRACKING MODELS â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+class Driver(db.Model):
+    id            = db.Column(db.Integer, primary_key=True)
+    school_id     = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=False)
+    name          = db.Column(db.String(120), nullable=False)
+    phone         = db.Column(db.String(20), nullable=False)
+    license_number= db.Column(db.String(50))
+    password_hash = db.Column(db.String(200), nullable=False)
+    active        = db.Column(db.Boolean, default=True)
+    # GPS tracking fields
+    current_latitude  = db.Column(db.Float, nullable=True)
+    current_longitude = db.Column(db.Float, nullable=True)
+    is_tracking       = db.Column(db.Boolean, default=False)
+    last_location_update = db.Column(db.DateTime, nullable=True)
+    # Assignment
+    assigned_route_id = db.Column(db.Integer, db.ForeignKey('route.id'), nullable=True)
+    created_at        = db.Column(db.DateTime, default=datetime.utcnow)
+    school            = db.relationship('School', backref='drivers')
+    assigned_route    = db.relationship('Route', backref='drivers')
+
+    def set_password(self, pw): self.password_hash = generate_password_hash(pw)
+    def check_password(self, pw): return check_password_hash(self.password_hash, pw)
+
+class Parent(db.Model):
+    id            = db.Column(db.Integer, primary_key=True)
+    school_id     = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=False)
+    name          = db.Column(db.String(120), nullable=False)
+    phone         = db.Column(db.String(20), nullable=False, unique=True)
+    password_hash = db.Column(db.String(200), nullable=False)
+    child_name    = db.Column(db.String(120))
+    child_class   = db.Column(db.String(50))
+    # Link parent to a specific route their child uses
+    assigned_route_id = db.Column(db.Integer, db.ForeignKey('route.id'), nullable=True)
+    active        = db.Column(db.Boolean, default=True)
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow)
+    school        = db.relationship('School', backref='parents')
+    assigned_route= db.relationship('Route', backref='parents')
+
+    def set_password(self, pw): self.password_hash = generate_password_hash(pw)
+    def check_password(self, pw): return check_password_hash(self.password_hash, pw)
+
+class LocationHistory(db.Model):
+    """Track GPS location history for analytics and playback"""
+    id        = db.Column(db.Integer, primary_key=True)
+    driver_id = db.Column(db.Integer, db.ForeignKey('driver.id'), nullable=False)
+    latitude  = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    speed     = db.Column(db.Float, nullable=True)  # km/h
+    driver    = db.relationship('Driver', backref='location_history')
+
+class PickupAlert(db.Model):
+    """Parent alerts driver they're ready for pickup/dropoff"""
+    id          = db.Column(db.Integer, primary_key=True)
+    parent_id   = db.Column(db.Integer, db.ForeignKey('parent.id'), nullable=False)
+    driver_id   = db.Column(db.Integer, db.ForeignKey('driver.id'), nullable=False)
+    route_id    = db.Column(db.Integer, db.ForeignKey('route.id'), nullable=False)
+    alert_type  = db.Column(db.String(20), nullable=False)  # 'pickup' or 'dropoff'
+    status      = db.Column(db.String(20), default='pending')  # pending/acknowledged/completed
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    acknowledged_at = db.Column(db.DateTime, nullable=True)
+    parent      = db.relationship('Parent', backref='pickup_alerts')
+    driver      = db.relationship('Driver', backref='pickup_alerts')
+    route       = db.relationship('Route', backref='pickup_alerts')
+
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -281,6 +346,16 @@ def payment_page():
     if not is_school_admin(): return redirect('/')
     return render_template('payment.html')
 
+@app.route('/driver')
+def driver_panel():
+    if not session.get('driver_id'): return redirect('/')
+    return render_template('driver.html')
+
+@app.route('/parent')
+def parent_panel():
+    if not session.get('parent_id'): return redirect('/')
+    return render_template('parent.html')
+
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # AUTH APIs
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -353,7 +428,483 @@ def check_session():
         return jsonify({'type': 'teacher', 'name': session.get('teacher_name'),
                         'school': session.get('school_name'),
                         'school_id': session.get('school_id')})
+    if session.get('driver_id'):
+        return jsonify({'type': 'driver', 'name': session.get('driver_name'),
+                        'school': session.get('school_name'),
+                        'school_id': session.get('school_id')})
+    if session.get('parent_id'):
+        return jsonify({'type': 'parent', 'name': session.get('parent_name'),
+                        'school': session.get('school_name'),
+                        'school_id': session.get('school_id')})
     return jsonify({'type': None})
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# DRIVER & PARENT AUTH + GPS TRACKING APIs
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+@app.route('/api/driver/login', methods=['POST'])
+def driver_login():
+    data = request.get_json()
+    phone = sanitize(data.get('phone',''))
+    password = data.get('password','')
+    school_code = sanitize(data.get('school_code',''))
+    
+    school = School.query.filter_by(code=school_code).first()
+    if not school or not school.is_active():
+        return jsonify({'success': False, 'message': 'School not found or inactive'}), 401
+    
+    driver = Driver.query.filter_by(school_id=school.id, phone=phone, active=True).first()
+    if driver and driver.check_password(password):
+        session['driver_id'] = driver.id
+        session['driver_name'] = driver.name
+        session['school_id'] = school.id
+        session['school_name'] = school.name
+        log_action(school.id, 'driver', driver.name, 'Driver login')
+        return jsonify({'success': True, 'name': driver.name, 'school': school.name,
+                        'route_id': driver.assigned_route_id,
+                        'is_tracking': driver.is_tracking})
+    return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+
+@app.route('/api/parent/login', methods=['POST'])
+def parent_login():
+    data = request.get_json()
+    phone = sanitize(data.get('phone',''))
+    password = data.get('password','')
+    school_code = sanitize(data.get('school_code',''))
+    
+    school = School.query.filter_by(code=school_code).first()
+    if not school or not school.is_active():
+        return jsonify({'success': False, 'message': 'School not found or inactive'}), 401
+    
+    parent = Parent.query.filter_by(school_id=school.id, phone=phone, active=True).first()
+    if parent and parent.check_password(password):
+        session['parent_id'] = parent.id
+        session['parent_name'] = parent.name
+        session['school_id'] = school.id
+        session['school_name'] = school.name
+        log_action(school.id, 'parent', parent.name, 'Parent login')
+        return jsonify({'success': True, 'name': parent.name, 'school': school.name,
+                        'child_name': parent.child_name, 'route_id': parent.assigned_route_id})
+    return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+
+@app.route('/api/driver/start-tracking', methods=['POST'])
+def driver_start_tracking():
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    driver = Driver.query.get(session['driver_id'])
+    driver.is_tracking = True
+    db.session.commit()
+    log_action(session['school_id'], 'driver', session['driver_name'], 'Started GPS tracking')
+    return jsonify({'success': True, 'message': 'GPS tracking started'})
+
+@app.route('/api/driver/stop-tracking', methods=['POST'])
+def driver_stop_tracking():
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    driver = Driver.query.get(session['driver_id'])
+    driver.is_tracking = False
+    driver.current_latitude = None
+    driver.current_longitude = None
+    db.session.commit()
+    log_action(session['school_id'], 'driver', session['driver_name'], 'Stopped GPS tracking')
+    return jsonify({'success': True, 'message': 'GPS tracking stopped'})
+
+@app.route('/api/driver/update-location', methods=['POST'])
+def driver_update_location():
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    data = request.get_json()
+    latitude = float(data.get('latitude', 0))
+    longitude = float(data.get('longitude', 0))
+    speed = data.get('speed')  # Optional
+    
+    if not latitude or not longitude:
+        return jsonify({'error': 'Latitude and longitude required'}), 400
+    
+    driver = Driver.query.get(session['driver_id'])
+    driver.current_latitude = latitude
+    driver.current_longitude = longitude
+    driver.last_location_update = datetime.utcnow()
+    
+    # Save to history for route playback
+    history = LocationHistory(
+        driver_id=driver.id,
+        latitude=latitude,
+        longitude=longitude,
+        speed=speed
+    )
+    db.session.add(history)
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+@app.route('/api/parent/track-bus')
+def parent_track_bus():
+    if not session.get('parent_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    
+    parent = Parent.query.get(session['parent_id'])
+    if not parent.assigned_route_id:
+        return jsonify({'error': 'No route assigned to your child'}), 400
+    
+    # Find active driver on this route
+    driver = Driver.query.filter_by(
+        school_id=parent.school_id,
+        assigned_route_id=parent.assigned_route_id,
+        active=True
+    ).first()
+    
+    # Find today's teacher assignment
+    today = date.today()
+    assignment = DutyAssignment.query.filter_by(
+        school_id=parent.school_id,
+        route_id=parent.assigned_route_id,
+        duty_date=today
+    ).first()
+    
+    teacher_info = None
+    if assignment:
+        teacher = Teacher.query.get(assignment.teacher_id)
+        if teacher:
+            teacher_info = {
+                'name': teacher.name,
+                'teaching_code': teacher.teaching_code
+            }
+    
+    route = Route.query.get(parent.assigned_route_id)
+    
+    response = {
+        'route_name': route.name,
+        'route_type': 'Morning' if route.is_morning else 'Evening',
+        'driver': {
+            'name': driver.name if driver else 'Not assigned',
+            'phone': driver.phone if driver else None,
+            'is_tracking': driver.is_tracking if driver else False
+        },
+        'teacher': teacher_info,
+        'tracking': False
+    }
+    
+    if driver and driver.is_tracking and driver.current_latitude:
+        response['tracking'] = True
+        response['latitude'] = driver.current_latitude
+        response['longitude'] = driver.current_longitude
+        response['last_update'] = driver.last_location_update.isoformat() if driver.last_location_update else None
+    
+    return jsonify(response)
+
+@app.route('/api/parent/alert-driver', methods=['POST'])
+def parent_alert_driver():
+    """Parent notifies driver they're ready at pickup/dropoff point"""
+    if not session.get('parent_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    
+    data = request.get_json()
+    alert_type = data.get('alert_type', 'pickup')  # pickup or dropoff
+    
+    parent = Parent.query.get(session['parent_id'])
+    if not parent.assigned_route_id:
+        return jsonify({'error': 'No route assigned'}), 400
+    
+    driver = Driver.query.filter_by(
+        school_id=parent.school_id,
+        assigned_route_id=parent.assigned_route_id,
+        active=True
+    ).first()
+    
+    if not driver:
+        return jsonify({'error': 'No driver assigned to this route'}), 400
+    
+    # Create alert
+    alert = PickupAlert(
+        parent_id=parent.id,
+        driver_id=driver.id,
+        route_id=parent.assigned_route_id,
+        alert_type=alert_type,
+        status='pending'
+    )
+    db.session.add(alert)
+    db.session.commit()
+    
+    log_action(parent.school_id, 'parent', parent.name, 
+               f'Sent {alert_type} alert to driver {driver.name}')
+    
+    return jsonify({
+        'success': True,
+        'message': f'Alert sent to driver {driver.name}',
+        'alert_id': alert.id
+    })
+
+@app.route('/api/driver/alerts')
+def driver_get_alerts():
+    """Get pending alerts for driver"""
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    
+    driver_id = session['driver_id']
+    alerts = PickupAlert.query.filter_by(
+        driver_id=driver_id,
+        status='pending'
+    ).order_by(PickupAlert.created_at.desc()).all()
+    
+    return jsonify([{
+        'id': a.id,
+        'parent_name': a.parent.name,
+        'parent_phone': a.parent.phone,
+        'child_name': a.parent.child_name,
+        'child_class': a.parent.child_class,
+        'alert_type': a.alert_type,
+        'time_ago': (datetime.utcnow() - a.created_at).seconds // 60,  # minutes ago
+        'created_at': a.created_at.isoformat()
+    } for a in alerts])
+
+@app.route('/api/driver/alert/<int:alert_id>/acknowledge', methods=['POST'])
+def driver_acknowledge_alert(alert_id):
+    """Driver acknowledges they saw the alert"""
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    
+    alert = PickupAlert.query.filter_by(
+        id=alert_id,
+        driver_id=session['driver_id']
+    ).first_or_404()
+    
+    alert.status = 'acknowledged'
+    alert.acknowledged_at = datetime.utcnow()
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+@app.route('/api/driver/notify-parent', methods=['POST'])
+def driver_notify_parent():
+    """Driver sends notification to specific parent (for calling or SMS)"""
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    
+    data = request.get_json()
+    parent_phone = data.get('parent_phone')
+    message_type = data.get('message_type', 'call')  # 'call' or 'sms'
+    
+    driver = Driver.query.get(session['driver_id'])
+    parent = Parent.query.filter_by(
+        school_id=driver.school_id,
+        phone=parent_phone
+    ).first()
+    
+    if not parent:
+        return jsonify({'error': 'Parent not found'}), 404
+    
+    # Log the notification attempt
+    log_action(driver.school_id, 'driver', driver.name,
+               f'{message_type.upper()} notification to parent {parent.name} ({parent_phone})')
+    
+    return jsonify({
+        'success': True,
+        'parent_name': parent.name,
+        'parent_phone': parent.phone,
+        'child_name': parent.child_name,
+        'action': message_type
+    })
+
+@app.route('/api/driver/route-info')
+def driver_route_info():
+    """Get driver's assigned route, today's teacher, and parent list"""
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    
+    driver = Driver.query.get(session['driver_id'])
+    if not driver.assigned_route_id:
+        return jsonify({'error': 'No route assigned'}), 400
+    
+    route = Route.query.get(driver.assigned_route_id)
+    
+    # Get today's teacher
+    today = date.today()
+    assignment = DutyAssignment.query.filter_by(
+        school_id=driver.school_id,
+        route_id=driver.assigned_route_id,
+        duty_date=today
+    ).first()
+    
+    teacher_info = None
+    if assignment:
+        teacher = Teacher.query.get(assignment.teacher_id)
+        if teacher:
+            teacher_info = {
+                'name': teacher.name,
+                'teaching_code': teacher.teaching_code
+            }
+    
+    # Get all parents on this route
+    parents = Parent.query.filter_by(
+        school_id=driver.school_id,
+        assigned_route_id=driver.assigned_route_id,
+        active=True
+    ).all()
+    
+    return jsonify({
+        'route': {
+            'id': route.id,
+            'name': route.name,
+            'description': route.description,
+            'type': 'Morning' if route.is_morning else 'Evening'
+        },
+        'teacher': teacher_info,
+        'parents': [{
+            'name': p.name,
+            'phone': p.phone,
+            'child_name': p.child_name,
+            'child_class': p.child_class
+        } for p in parents],
+        'parent_count': len(parents)
+    })
+
+@app.route('/api/admin/drivers')
+def admin_drivers():
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    drivers = Driver.query.filter_by(school_id=current_school_id()).all()
+    return jsonify([{
+        'id': d.id,
+        'name': d.name,
+        'phone': d.phone,
+        'license': d.license_number,
+        'active': d.active,
+        'assigned_route_id': d.assigned_route_id,
+        'assigned_route_name': d.assigned_route.name if d.assigned_route else None,
+        'is_tracking': d.is_tracking,
+        'last_location_update': d.last_location_update.isoformat() if d.last_location_update else None
+    } for d in drivers])
+
+@app.route('/api/admin/driver/create', methods=['POST'])
+def admin_create_driver():
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    data = request.get_json()
+    name = sanitize(data.get('name',''))
+    phone = sanitize(data.get('phone',''))
+    license = sanitize(data.get('license',''))
+    password = data.get('password','')
+    route_id = data.get('route_id')
+    
+    if not all([name, phone, password]):
+        return jsonify({'error': 'Name, phone, and password required'}), 400
+    
+    driver = Driver(
+        school_id=current_school_id(),
+        name=name,
+        phone=phone,
+        license_number=license,
+        assigned_route_id=route_id if route_id else None
+    )
+    driver.set_password(password)
+    db.session.add(driver)
+    db.session.commit()
+    log_action(current_school_id(), 'admin', session['school_name'], f'Created driver: {name}')
+    return jsonify({'success': True, 'driver_id': driver.id})
+
+@app.route('/api/admin/driver/<int:did>/edit', methods=['PUT'])
+def admin_edit_driver(did):
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    driver = Driver.query.filter_by(id=did, school_id=current_school_id()).first_or_404()
+    data = request.get_json()
+    
+    if 'name' in data: driver.name = sanitize(data['name'])
+    if 'phone' in data: driver.phone = sanitize(data['phone'])
+    if 'license' in data: driver.license_number = sanitize(data['license'])
+    if 'active' in data: driver.active = bool(data['active'])
+    if 'assigned_route_id' in data: driver.assigned_route_id = data['assigned_route_id']
+    if 'password' in data and data['password']:
+        driver.set_password(data['password'])
+    
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/driver/<int:did>/delete', methods=['DELETE'])
+def admin_delete_driver(did):
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    driver = Driver.query.filter_by(id=did, school_id=current_school_id()).first_or_404()
+    LocationHistory.query.filter_by(driver_id=driver.id).delete()
+    db.session.delete(driver)
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/parents')
+def admin_parents():
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    parents = Parent.query.filter_by(school_id=current_school_id()).all()
+    return jsonify([{
+        'id': p.id,
+        'name': p.name,
+        'phone': p.phone,
+        'child_name': p.child_name,
+        'child_class': p.child_class,
+        'assigned_route_id': p.assigned_route_id,
+        'assigned_route_name': p.assigned_route.name if p.assigned_route else None,
+        'active': p.active
+    } for p in parents])
+
+@app.route('/api/admin/parent/create', methods=['POST'])
+def admin_create_parent():
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    data = request.get_json()
+    name = sanitize(data.get('name',''))
+    phone = sanitize(data.get('phone',''))
+    password = data.get('password','')
+    child_name = sanitize(data.get('child_name',''))
+    child_class = sanitize(data.get('child_class',''))
+    route_id = data.get('route_id')
+    
+    if not all([name, phone, password]):
+        return jsonify({'error': 'Name, phone, and password required'}), 400
+    if Parent.query.filter_by(phone=phone).first():
+        return jsonify({'error': 'Phone number already registered'}), 400
+    
+    parent = Parent(
+        school_id=current_school_id(),
+        name=name,
+        phone=phone,
+        child_name=child_name,
+        child_class=child_class,
+        assigned_route_id=route_id if route_id else None
+    )
+    parent.set_password(password)
+    db.session.add(parent)
+    db.session.commit()
+    log_action(current_school_id(), 'admin', session['school_name'], f'Created parent: {name}')
+    return jsonify({'success': True, 'parent_id': parent.id})
+
+@app.route('/api/admin/parent/<int:pid>/edit', methods=['PUT'])
+def admin_edit_parent(pid):
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    parent = Parent.query.filter_by(id=pid, school_id=current_school_id()).first_or_404()
+    data = request.get_json()
+    
+    if 'name' in data: parent.name = sanitize(data['name'])
+    if 'phone' in data: parent.phone = sanitize(data['phone'])
+    if 'child_name' in data: parent.child_name = sanitize(data['child_name'])
+    if 'child_class' in data: parent.child_class = sanitize(data['child_class'])
+    if 'active' in data: parent.active = bool(data['active'])
+    if 'assigned_route_id' in data: parent.assigned_route_id = data['assigned_route_id']
+    if 'password' in data and data['password']:
+        parent.set_password(data['password'])
+    
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/parent/<int:pid>/delete', methods=['DELETE'])
+def admin_delete_parent(pid):
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    parent = Parent.query.filter_by(id=pid, school_id=current_school_id()).first_or_404()
+    db.session.delete(parent)
+    db.session.commit()
+    return jsonify({'success': True})
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # SCHOOL REGISTRATION

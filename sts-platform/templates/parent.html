@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Parent Dashboard – My School Transport</title>
+<meta name="theme-color" content="#1a5276"/>
+<link rel="stylesheet" href="/static/css/style.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+#map { height: 400px; width: 100%; border-radius: 10px; margin-top: 1rem; }
+.pulse { animation: pulse 2s infinite; }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+</style>
+</head>
+<body class="dash-body">
+<nav class="topnav">
+  <div class="nav-left">
+    <img src="/static/icons/icon-192.png" alt="MST" class="nav-logo" style="width:32px;height:32px;border-radius:6px;"/>
+    <span class="nav-title">Parent Dashboard</span>
+  </div>
+  <div class="nav-right">
+    <span id="parent-name" style="margin-right:1rem;font-weight:600;"></span>
+    <button class="btn-secondary" onclick="logout()">Logout</button>
+  </div>
+</nav>
+
+<div class="dash-container">
+  <!-- Child Info Card -->
+  <div class="status-card">
+    <h2>👧 Your Child</h2>
+    <div id="child-info" style="margin-top:1rem;"></div>
+  </div>
+
+  <!-- Route & Staff Info -->
+  <div class="card">
+    <h2>🚌 Route Information</h2>
+    <div id="route-info" style="margin-top:1rem;">
+      <p style="color:var(--muted);">Loading route information...</p>
+    </div>
+  </div>
+
+  <!-- Live Bus Tracking -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+      <h2>📍 Live Bus Location</h2>
+      <button class="btn-primary" onclick="refreshLocation()" style="padding:0.5rem 1rem;">
+        🔄 Refresh
+      </button>
+    </div>
+    
+    <div id="tracking-status" style="padding:0.8rem;background:var(--bg);border-radius:8px;margin-bottom:1rem;">
+      <div class="pulse" style="color:var(--muted);font-size:0.9rem;">Checking tracking status...</div>
+    </div>
+    
+    <div id="map"></div>
+    
+    <div style="margin-top:1rem;display:flex;gap:0.5rem;">
+      <button id="btn-alert-pickup" class="btn-primary full" onclick="alertDriver('pickup')" style="display:none;">
+        🏠 I'm Ready for Pickup
+      </button>
+      <button id="btn-alert-dropoff" class="btn-primary full" onclick="alertDriver('dropoff')" style="display:none;">
+        🏫 I'm Ready for Dropoff
+      </button>
+    </div>
+  </div>
+
+  <!-- Driver Contact -->
+  <div class="card">
+    <h2>📞 Contact Driver</h2>
+    <div id="driver-contact" style="margin-top:1rem;"></div>
+  </div>
+</div>
+
+<script>
+let map = null;
+let busMarker = null;
+let trackingInterval = null;
+let parentData = {};
+
+async function init() {
+  const sess = await fetch('/api/session').then(r=>r.json());
+  if (sess.type !== 'parent') { window.location.href='/'; return; }
+  
+  document.getElementById('parent-name').textContent = sess.name;
+  
+  // Display child info
+  document.getElementById('child-info').innerHTML = `
+    <div style="background:var(--bg);padding:1rem;border-radius:8px;">
+      <div style="font-size:1.1rem;font-weight:600;margin-bottom:0.3rem;">${sess.child_name || 'Not specified'}</div>
+      <div style="color:var(--muted);font-size:0.9rem;">Class: ${sess.child_class || 'N/A'}</div>
+    </div>`;
+  
+  // Initialize map
+  initMap();
+  
+  // Load route and tracking info
+  await loadTrackingInfo();
+  
+  // Auto-refresh location every 15 seconds
+  trackingInterval = setInterval(loadTrackingInfo, 15000);
+}
+
+function initMap() {
+  // Initialize map centered on Nairobi, Kenya
+  map = L.map('map').setView([-1.2921, 36.8219], 13);
+  
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(map);
+  
+  // Create custom bus icon
+  const busIcon = L.divIcon({
+    html: '<div style="font-size:24px;">🚌</div>',
+    className: '',
+    iconSize: [30, 30],
+    iconAnchor: [15, 15]
+  });
+  
+  busMarker = L.marker([-1.2921, 36.8219], {icon: busIcon}).addTo(map);
+  busMarker.bindPopup('Bus location will appear here when tracking starts');
+}
+
+async function loadTrackingInfo() {
+  try {
+    const r = await fetch('/api/parent/track-bus');
+    if (!r.ok) {
+      displayError('Unable to load tracking information');
+      return;
+    }
+    
+    const data = await r.json();
+    parentData = data;
+    
+    // Display route info
+    let routeHtml = `
+      <div style="background:var(--bg);padding:1rem;border-radius:8px;">
+        <h3 style="margin:0 0 0.5rem 0;color:var(--primary);">${data.route_name}</h3>
+        <p style="margin:0.3rem 0;font-size:0.9rem;"><strong>Type:</strong> ${data.route_type} Route</p>
+      </div>`;
+    
+    // Display driver info
+    routeHtml += `
+      <div style="background:var(--bg);padding:1rem;border-radius:8px;margin-top:0.8rem;">
+        <h4 style="margin:0 0 0.5rem 0;">👨‍✈️ Driver</h4>
+        <p style="margin:0.3rem 0;font-size:0.9rem;"><strong>${data.driver.name}</strong></p>
+        <p style="margin:0.3rem 0;font-size:0.85rem;color:var(--muted);">
+          Status: ${data.driver.is_tracking ? '<span style="color:var(--success);">● Tracking Active</span>' : '<span style="color:var(--muted);">○ Offline</span>'}
+        </p>
+      </div>`;
+    
+    // Display teacher info
+    if (data.teacher) {
+      routeHtml += `
+        <div style="background:var(--bg);padding:1rem;border-radius:8px;margin-top:0.8rem;">
+          <h4 style="margin:0 0 0.5rem 0;">👨‍🏫 Teacher on Duty Today</h4>
+          <p style="margin:0.3rem 0;font-size:0.9rem;"><strong>${data.teacher.name}</strong></p>
+          <p style="margin:0.3rem 0;font-size:0.85rem;color:var(--muted);">${data.teacher.teaching_code}</p>
+        </div>`;
+    } else {
+      routeHtml += `
+        <div style="background:var(--bg);padding:1rem;border-radius:8px;margin-top:0.8rem;">
+          <p style="margin:0;color:var(--muted);font-size:0.9rem;">No teacher assigned today</p>
+        </div>`;
+    }
+    
+    document.getElementById('route-info').innerHTML = routeHtml;
+    
+    // Update tracking status and map
+    if (data.tracking && data.latitude && data.longitude) {
+      const lastUpdate = new Date(data.last_update);
+      const timeAgo = Math.floor((new Date() - lastUpdate) / 1000 / 60);
+      const timeText = timeAgo < 1 ? 'Just now' : `${timeAgo} min ago`;
+      
+      document.getElementById('tracking-status').innerHTML = `
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+          <span style="font-size:1.2rem;color:var(--success);">●</span>
+          <div>
+            <div style="font-weight:600;color:var(--success);">Bus is being tracked</div>
+            <div style="font-size:0.85rem;color:var(--muted);">Last updated: ${timeText}</div>
+          </div>
+        </div>`;
+      
+      // Update map
+      const busPos = [data.latitude, data.longitude];
+      busMarker.setLatLng(busPos);
+      busMarker.bindPopup(`<strong>${data.driver.name}</strong><br>${data.route_name}<br>Updated: ${timeText}`).openPopup();
+      map.setView(busPos, 15);
+      
+      // Show alert buttons
+      document.getElementById('btn-alert-pickup').style.display = 'inline-block';
+      document.getElementById('btn-alert-dropoff').style.display = 'inline-block';
+    } else {
+      document.getElementById('tracking-status').innerHTML = `
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+          <span style="font-size:1.2rem;color:var(--muted);">○</span>
+          <div>
+            <div style="font-weight:600;color:var(--muted);">Bus tracking not active</div>
+            <div style="font-size:0.85rem;color:var(--muted);">Driver has not started tracking yet</div>
+          </div>
+        </div>`;
+      
+      // Hide alert buttons when not tracking
+      document.getElementById('btn-alert-pickup').style.display = 'none';
+      document.getElementById('btn-alert-dropoff').style.display = 'none';
+    }
+    
+    // Display driver contact
+    if (data.driver.phone) {
+      document.getElementById('driver-contact').innerHTML = `
+        <div style="background:var(--bg);padding:1rem;border-radius:8px;">
+          <p style="margin:0 0 0.8rem 0;font-size:0.9rem;color:var(--muted);">
+            Contact your driver if you have questions or need assistance
+          </p>
+          <button class="btn-primary full" onclick="callDriver()">
+            📞 Call ${data.driver.name}
+          </button>
+        </div>`;
+    } else {
+      document.getElementById('driver-contact').innerHTML = `
+        <p style="color:var(--muted);">Driver contact not available</p>`;
+    }
+    
+  } catch (err) {
+    displayError('Error loading tracking information');
+    console.error(err);
+  }
+}
+
+async function refreshLocation() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ Refreshing...';
+  
+  await loadTrackingInfo();
+  
+  setTimeout(() => {
+    btn.disabled = false;
+    btn.textContent = '🔄 Refresh';
+  }, 1000);
+}
+
+async function alertDriver(type) {
+  const typeText = type === 'pickup' ? 'Pickup' : 'Drop-off';
+  
+  if (!confirm(`Send ${typeText} alert to driver?\n\nThis will notify the driver that you're ready and waiting.`)) {
+    return;
+  }
+  
+  try {
+    const r = await fetch('/api/parent/alert-driver', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({alert_type: type})
+    });
+    
+    const data = await r.json();
+    
+    if (r.ok) {
+      alert(`✓ Alert sent to ${data.message.split('driver ')[1]}`);
+    } else {
+      alert('Error: ' + (data.error || 'Could not send alert'));
+    }
+  } catch (err) {
+    alert('Error sending alert. Please try again.');
+  }
+}
+
+function callDriver() {
+  if (parentData.driver && parentData.driver.phone) {
+    if (confirm(`Call driver ${parentData.driver.name}?`)) {
+      window.location.href = `tel:${parentData.driver.phone}`;
+    }
+  }
+}
+
+function displayError(message) {
+  document.getElementById('tracking-status').innerHTML = `
+    <div style="color:var(--danger);font-size:0.9rem;">${message}</div>`;
+}
+
+async function logout() {
+  if (trackingInterval) clearInterval(trackingInterval);
+  await fetch('/api/logout', {method:'POST'});
+  window.location.href = '/';
+}
+
+// Initialize on load
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

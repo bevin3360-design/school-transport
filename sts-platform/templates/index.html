@@ -22,9 +22,11 @@
       <p class="subtitle">Manage. Allocate. Track. — Powered by MST Platform</p>
     </div>
     <div class="tab-bar">
-      <button class="tab-btn active" onclick="switchTab('teacher',this)">Teacher Login</button>
-      <button class="tab-btn" onclick="switchTab('admin',this)">School Admin</button>
-      <button class="tab-btn" onclick="switchTab('super',this)">Super Admin</button>
+      <button class="tab-btn active" onclick="switchTab('teacher',this)">Teacher</button>
+      <button class="tab-btn" onclick="switchTab('driver',this)">Driver</button>
+      <button class="tab-btn" onclick="switchTab('parent',this)">Parent</button>
+      <button class="tab-btn" onclick="switchTab('admin',this)">Admin</button>
+      <button class="tab-btn" onclick="switchTab('super',this)">Super</button>
     </div>
 
     <!-- TEACHER -->
@@ -37,6 +39,30 @@
         <input type="password" id="t-pass" placeholder="Your passcode"/></div>
       <button class="btn-primary full" onclick="teacherLogin()">Sign In</button>
       <p id="t-err" class="error-msg hidden"></p>
+    </div>
+
+    <!-- DRIVER -->
+    <div id="tab-driver" class="tab-content">
+      <div class="form-group"><label>School Code</label>
+        <input type="text" id="d-school" placeholder="e.g. FSL001" autocomplete="off"/></div>
+      <div class="form-group"><label>Phone Number</label>
+        <input type="tel" id="d-phone" placeholder="0712345678" autocomplete="off"/></div>
+      <div class="form-group"><label>Password</label>
+        <input type="password" id="d-pass" placeholder="Your password"/></div>
+      <button class="btn-primary full" onclick="driverLogin()">Sign In</button>
+      <p id="d-err" class="error-msg hidden"></p>
+    </div>
+
+    <!-- PARENT -->
+    <div id="tab-parent" class="tab-content">
+      <div class="form-group"><label>School Code</label>
+        <input type="text" id="p-school" placeholder="e.g. FSL001" autocomplete="off"/></div>
+      <div class="form-group"><label>Phone Number</label>
+        <input type="tel" id="p-phone" placeholder="0712345678" autocomplete="off"/></div>
+      <div class="form-group"><label>Password</label>
+        <input type="password" id="p-pass" placeholder="Your password"/></div>
+      <button class="btn-primary full" onclick="parentLogin()">Sign In</button>
+      <p id="p-err" class="error-msg hidden"></p>
     </div>
 
     <!-- ADMIN -->
@@ -113,10 +139,36 @@ async function superLogin() {
   if(d.success) window.location.href='/super';
   else{err.textContent=d.message||'Login failed';err.classList.remove('hidden');}
 }
+async function driverLogin() {
+  const school_code=document.getElementById('d-school').value.trim();
+  const phone=document.getElementById('d-phone').value.trim();
+  const password=document.getElementById('d-pass').value;
+  const err=document.getElementById('d-err');
+  err.classList.add('hidden');
+  const r=await fetch('/api/driver/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({school_code,phone,password})});
+  const d=await r.json();
+  if(d.success) window.location.href='/driver';
+  else{err.textContent=d.message||'Login failed';err.classList.remove('hidden');}
+}
+async function parentLogin() {
+  const school_code=document.getElementById('p-school').value.trim();
+  const phone=document.getElementById('p-phone').value.trim();
+  const password=document.getElementById('p-pass').value;
+  const err=document.getElementById('p-err');
+  err.classList.add('hidden');
+  const r=await fetch('/api/parent/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({school_code,phone,password})});
+  const d=await r.json();
+  if(d.success) window.location.href='/parent';
+  else{err.textContent=d.message||'Login failed';err.classList.remove('hidden');}
+}
 document.addEventListener('keydown',e=>{
   if(e.key!=='Enter')return;
   const active=document.querySelector('.tab-content.active').id;
   if(active==='tab-teacher')teacherLogin();
+  else if(active==='tab-driver')driverLogin();
+  else if(active==='tab-parent')parentLogin();
   else if(active==='tab-admin')adminLogin();
   else superLogin();
 });

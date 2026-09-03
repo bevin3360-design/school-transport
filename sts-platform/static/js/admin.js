@@ -9,6 +9,8 @@ function showSection(name,el){
   if(name==='roster'){loadRoster();loadWeek();}
   if(name==='teachers')loadTeachers();
   if(name==='routes')loadRoutes();
+  if(name==='drivers')loadDrivers();
+  if(name==='parents')loadParents();
   if(name==='logs')loadLogs();
   if(name==='settings')loadSettings();
 }
@@ -223,4 +225,289 @@ if ('serviceWorker' in navigator) {
     });
   });
   navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+}
+
+
+// ══════════════════════════════════════════════════════
+// DRIVERS MANAGEMENT
+// ══════════════════════════════════════════════════════
+async function loadDrivers() {
+  const r = await fetch('/api/admin/drivers');
+  const drivers = await r.json();
+  const tbody = document.getElementById('drivers-body');
+  
+  if (drivers.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);">No drivers added yet</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = drivers.map(d => `
+    <tr>
+      <td>${d.name}</td>
+      <td>${d.phone}</td>
+      <td>${d.license || 'N/A'}</td>
+      <td>${d.assigned_route_name || '<span style="color:var(--muted);">Unassigned</span>'}</td>
+      <td>${d.is_tracking ? '<span style="color:var(--success);">● Tracking</span>' : '<span style="color:var(--muted);">○ Offline</span>'}</td>
+      <td>
+        <button class="btn-sm" onclick="editDriver(${d.id})">✏️</button>
+        <button class="btn-sm btn-danger" onclick="deleteDriver(${d.id},'${d.name}')">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openAddDriver() {
+  document.getElementById('d-modal-title').textContent = 'Add Driver';
+  document.getElementById('d-id').value = '';
+  document.getElementById('d-name').value = '';
+  document.getElementById('d-phone').value = '';
+  document.getElementById('d-license').value = '';
+  document.getElementById('d-password').value = '';
+  document.getElementById('d-password').placeholder = 'Create password';
+  document.getElementById('d-route').value = '';
+  document.getElementById('d-active').checked = true;
+  document.getElementById('d-err').classList.add('hidden');
+  
+  // Populate route dropdown
+  populateRouteDropdown('d-route');
+  
+  document.getElementById('driver-modal').classList.remove('hidden');
+}
+
+async function editDriver(id) {
+  const r = await fetch('/api/admin/drivers');
+  const drivers = await r.json();
+  const driver = drivers.find(d => d.id === id);
+  if (!driver) return;
+  
+  document.getElementById('d-modal-title').textContent = 'Edit Driver';
+  document.getElementById('d-id').value = driver.id;
+  document.getElementById('d-name').value = driver.name;
+  document.getElementById('d-phone').value = driver.phone;
+  document.getElementById('d-license').value = driver.license || '';
+  document.getElementById('d-password').value = '';
+  document.getElementById('d-password').placeholder = 'Leave blank to keep current';
+  document.getElementById('d-route').value = driver.assigned_route_id || '';
+  document.getElementById('d-active').checked = driver.active;
+  document.getElementById('d-err').classList.add('hidden');
+  
+  populateRouteDropdown('d-route');
+  
+  document.getElementById('driver-modal').classList.remove('hidden');
+}
+
+async function saveDriver() {
+  const id = document.getElementById('d-id').value;
+  const name = document.getElementById('d-name').value.trim();
+  const phone = document.getElementById('d-phone').value.trim();
+  const license = document.getElementById('d-license').value.trim();
+  const password = document.getElementById('d-password').value;
+  const route_id = document.getElementById('d-route').value || null;
+  const active = document.getElementById('d-active').checked;
+  const errEl = document.getElementById('d-err');
+  
+  if (!name || !phone) {
+    errEl.textContent = 'Name and phone are required';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  
+  if (!id && !password) {
+    errEl.textContent = 'Password is required for new drivers';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  
+  const data = { name, phone, license, active, assigned_route_id: route_id };
+  if (password) data.password = password;
+  
+  try {
+    let r;
+    if (id) {
+      r = await fetch(`/api/admin/driver/${id}/edit`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      });
+    } else {
+      r = await fetch('/api/admin/driver/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      });
+    }
+    
+    if (r.ok) {
+      closeModal('driver-modal');
+      await loadDrivers();
+    } else {
+      const err = await r.json();
+      errEl.textContent = err.error || 'Error saving driver';
+      errEl.classList.remove('hidden');
+    }
+  } catch (err) {
+    errEl.textContent = 'Network error';
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function deleteDriver(id, name) {
+  if (!confirm(`Delete driver ${name}?\n\nThis will also delete their location history.`)) return;
+  
+  const r = await fetch(`/api/admin/driver/${id}/delete`, { method: 'DELETE' });
+  if (r.ok) {
+    await loadDrivers();
+  } else {
+    alert('Error deleting driver');
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// PARENTS MANAGEMENT
+// ══════════════════════════════════════════════════════
+async function loadParents() {
+  const r = await fetch('/api/admin/parents');
+  const parents = await r.json();
+  const tbody = document.getElementById('parents-body');
+  
+  if (parents.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);">No parents added yet</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = parents.map(p => `
+    <tr>
+      <td>${p.name}</td>
+      <td>${p.phone}</td>
+      <td>${p.child_name || 'N/A'}</td>
+      <td>${p.child_class || 'N/A'}</td>
+      <td>${p.assigned_route_name || '<span style="color:var(--muted);">Unassigned</span>'}</td>
+      <td>
+        <button class="btn-sm" onclick="editParent(${p.id})">✏️</button>
+        <button class="btn-sm btn-danger" onclick="deleteParent(${p.id},'${p.name}')">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openAddParent() {
+  document.getElementById('p-modal-title').textContent = 'Add Parent';
+  document.getElementById('p-id').value = '';
+  document.getElementById('p-name').value = '';
+  document.getElementById('p-phone').value = '';
+  document.getElementById('p-password').value = '';
+  document.getElementById('p-password').placeholder = 'Create password';
+  document.getElementById('p-child-name').value = '';
+  document.getElementById('p-child-class').value = '';
+  document.getElementById('p-route').value = '';
+  document.getElementById('p-active').checked = true;
+  document.getElementById('p-err').classList.add('hidden');
+  
+  populateRouteDropdown('p-route');
+  
+  document.getElementById('parent-modal').classList.remove('hidden');
+}
+
+async function editParent(id) {
+  const r = await fetch('/api/admin/parents');
+  const parents = await r.json();
+  const parent = parents.find(p => p.id === id);
+  if (!parent) return;
+  
+  document.getElementById('p-modal-title').textContent = 'Edit Parent';
+  document.getElementById('p-id').value = parent.id;
+  document.getElementById('p-name').value = parent.name;
+  document.getElementById('p-phone').value = parent.phone;
+  document.getElementById('p-password').value = '';
+  document.getElementById('p-password').placeholder = 'Leave blank to keep current';
+  document.getElementById('p-child-name').value = parent.child_name || '';
+  document.getElementById('p-child-class').value = parent.child_class || '';
+  document.getElementById('p-route').value = parent.assigned_route_id || '';
+  document.getElementById('p-active').checked = parent.active;
+  document.getElementById('p-err').classList.add('hidden');
+  
+  populateRouteDropdown('p-route');
+  
+  document.getElementById('parent-modal').classList.remove('hidden');
+}
+
+async function saveParent() {
+  const id = document.getElementById('p-id').value;
+  const name = document.getElementById('p-name').value.trim();
+  const phone = document.getElementById('p-phone').value.trim();
+  const password = document.getElementById('p-password').value;
+  const child_name = document.getElementById('p-child-name').value.trim();
+  const child_class = document.getElementById('p-child-class').value.trim();
+  const route_id = document.getElementById('p-route').value || null;
+  const active = document.getElementById('p-active').checked;
+  const errEl = document.getElementById('p-err');
+  
+  if (!name || !phone) {
+    errEl.textContent = 'Name and phone are required';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  
+  if (!id && !password) {
+    errEl.textContent = 'Password is required for new parents';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  
+  const data = { name, phone, child_name, child_class, active, assigned_route_id: route_id };
+  if (password) data.password = password;
+  
+  try {
+    let r;
+    if (id) {
+      r = await fetch(`/api/admin/parent/${id}/edit`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      });
+    } else {
+      r = await fetch('/api/admin/parent/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      });
+    }
+    
+    if (r.ok) {
+      closeModal('parent-modal');
+      await loadParents();
+    } else {
+      const err = await r.json();
+      errEl.textContent = err.error || 'Error saving parent';
+      errEl.classList.remove('hidden');
+    }
+  } catch (err) {
+    errEl.textContent = 'Network error';
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function deleteParent(id, name) {
+  if (!confirm(`Delete parent ${name}?`)) return;
+  
+  const r = await fetch(`/api/admin/parent/${id}/delete`, { method: 'DELETE' });
+  if (r.ok) {
+    await loadParents();
+  } else {
+    alert('Error deleting parent');
+  }
+}
+
+// Helper function to populate route dropdowns
+async function populateRouteDropdown(selectId) {
+  const r = await fetch('/api/routes');
+  const routes = await r.json();
+  const select = document.getElementById(selectId);
+  
+  routes.forEach(route => {
+    const opt = document.createElement('option');
+    opt.value = route.id;
+    opt.textContent = `${route.name} (${route.is_morning ? 'Morning' : 'Evening'})`;
+    select.appendChild(opt);
+  });
 }

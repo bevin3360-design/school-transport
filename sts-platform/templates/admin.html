@@ -27,6 +27,8 @@
       <li class="nav-item active" onclick="showSection('roster',this)">📋 Roster</li>
       <li class="nav-item" onclick="showSection('teachers',this)">👩‍🏫 Teachers</li>
       <li class="nav-item" onclick="showSection('routes',this)">🗺️ Routes</li>
+      <li class="nav-item" onclick="showSection('drivers',this)">🚗 Drivers</li>
+      <li class="nav-item" onclick="showSection('parents',this)">👨‍👩‍👧 Parents</li>
       <li class="nav-item" onclick="showSection('logs',this)">📝 Logs</li>
       <li class="nav-item" onclick="showSection('settings',this)">⚙️ Settings</li>
       <li class="nav-item" onclick="window.location.href='/payment'">💳 Subscription</li>
@@ -67,6 +69,26 @@
         <button class="btn-primary" onclick="openAddRoute()">+ Add Route</button></div>
       <table class="data-table"><thead><tr><th>Route Name</th><th>Description</th><th>Morning</th><th>Active</th><th>Actions</th></tr></thead>
       <tbody id="routes-body"></tbody></table>
+    </section>
+
+    <!-- DRIVERS -->
+    <section id="section-drivers" class="section">
+      <div class="section-header"><h2>Drivers</h2>
+        <button class="btn-primary" onclick="openAddDriver()">+ Add Driver</button></div>
+      <table class="data-table">
+        <thead><tr><th>Name</th><th>Phone</th><th>License</th><th>Assigned Route</th><th>Tracking</th><th>Actions</th></tr></thead>
+        <tbody id="drivers-body"></tbody>
+      </table>
+    </section>
+
+    <!-- PARENTS -->
+    <section id="section-parents" class="section">
+      <div class="section-header"><h2>Parents</h2>
+        <button class="btn-primary" onclick="openAddParent()">+ Add Parent</button></div>
+      <table class="data-table">
+        <thead><tr><th>Parent Name</th><th>Phone</th><th>Child Name</th><th>Class</th><th>Route</th><th>Actions</th></tr></thead>
+        <tbody id="parents-body"></tbody>
+      </table>
     </section>
 
     <!-- LOGS -->
@@ -150,6 +172,51 @@
     <div id="replace-list" style="display:flex;flex-direction:column;gap:.6rem;max-height:300px;overflow-y:auto"></div>
     <input type="hidden" id="replace-aid"/>
     <div class="modal-footer"><button class="btn-outline" onclick="closeModal('replace-modal')">Cancel</button></div>
+  </div>
+</div>
+
+<!-- Driver Modal -->
+<div id="driver-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header"><h3 id="d-modal-title">Add Driver</h3>
+      <button class="modal-close" onclick="closeModal('driver-modal')">✕</button></div>
+    <input type="hidden" id="d-id"/>
+    <div class="form-group"><label>Full Name</label><input type="text" id="d-name"/></div>
+    <div class="form-group"><label>Phone Number</label><input type="tel" id="d-phone" placeholder="0712345678"/></div>
+    <div class="form-group"><label>License Number</label><input type="text" id="d-license"/></div>
+    <div class="form-group"><label>Password</label><input type="password" id="d-password" placeholder="Leave blank to keep current"/></div>
+    <div class="form-group"><label>Assign to Route</label>
+      <select id="d-route"><option value="">-- Select Route --</option></select></div>
+    <div class="form-group toggle-row"><label>Active</label>
+      <label class="toggle"><input type="checkbox" id="d-active" checked/><span class="slider"></span></label></div>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeModal('driver-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveDriver()">Save</button>
+    </div>
+    <p id="d-err" class="error-msg hidden"></p>
+  </div>
+</div>
+
+<!-- Parent Modal -->
+<div id="parent-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header"><h3 id="p-modal-title">Add Parent</h3>
+      <button class="modal-close" onclick="closeModal('parent-modal')">✕</button></div>
+    <input type="hidden" id="p-id"/>
+    <div class="form-group"><label>Parent Name</label><input type="text" id="p-name"/></div>
+    <div class="form-group"><label>Phone Number</label><input type="tel" id="p-phone" placeholder="0712345678"/></div>
+    <div class="form-group"><label>Password</label><input type="password" id="p-password" placeholder="Leave blank to keep current"/></div>
+    <div class="form-group"><label>Child's Name</label><input type="text" id="p-child-name"/></div>
+    <div class="form-group"><label>Child's Class</label><input type="text" id="p-child-class" placeholder="e.g. Grade 3A"/></div>
+    <div class="form-group"><label>Assign to Route</label>
+      <select id="p-route"><option value="">-- Select Route --</option></select></div>
+    <div class="form-group toggle-row"><label>Active</label>
+      <label class="toggle"><input type="checkbox" id="p-active" checked/><span class="slider"></span></label></div>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeModal('parent-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveParent()">Save</button>
+    </div>
+    <p id="p-err" class="error-msg hidden"></p>
   </div>
 </div>
 
