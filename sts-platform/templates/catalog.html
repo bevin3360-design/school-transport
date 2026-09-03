@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Schemes of Work Catalog – Kenya CBC</title>
+<meta name="description" content="Download CBC Schemes of Work for all grades. Pre-Primary, Primary, Junior Secondary. Instant download after payment."/>
+<meta name="theme-color" content="#1a5632"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-title" content="Schemes"/>
+<link rel="manifest" href="/static/manifest.json"/>
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
+<link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body class="cat-body">
+
+<!-- ═══ TOP NAV ═══ -->
+<nav class="cat-nav">
+  <div class="cat-nav-left">
+    <span class="cat-logo">📚</span>
+    <div>
+      <div class="cat-nav-title">CBC Schemes of Work</div>
+      <div class="cat-nav-sub">Kenya | All Grades | All Subjects</div>
+    </div>
+  </div>
+  <div class="cat-nav-right">
+    <button class="cat-tab-btn active" onclick="showTab('catalog',this)">🏪 Catalog</button>
+    <button class="cat-tab-btn" onclick="showTab('cart',this)">🛒 Cart <span id="cart-badge" class="cart-badge hidden">0</span></button>
+    <button class="cat-tab-btn" onclick="showTab('downloads',this)">📥 Downloads</button>
+    <button class="cat-tab-btn" onclick="showTab('wallet',this)">💰 Wallet</button>
+    <button class="cat-tab-btn" onclick="showTab('referral',this)">🔗 Refer &amp; Earn</button>
+    <button class="cat-tab-btn cat-admin-btn" onclick="showTab('admin',this)">🔐 Admin</button>
+  </div>
+</nav>
+
+<div class="cat-container">
+
+  <!-- ═══ CATALOG TAB ═══ -->
+  <div id="tab-catalog" class="cat-tab active">
+
+    <!-- Hero -->
+    <div class="cat-hero">
+      <h1>Download CBC Schemes of Work</h1>
+      <p>Quality, ready-to-use schemes for every grade &amp; subject. Starting at <strong>KES 80</strong>.</p>
+      <div class="cat-hero-stats" id="hero-stats"></div>
+    </div>
+
+    <!-- Filters -->
+    <div class="cat-filters">
+      <select id="f-level" class="cat-select" onchange="applyFilters()">
+        <option value="">All Levels</option>
+      </select>
+      <select id="f-grade" class="cat-select" onchange="applyFilters()">
+        <option value="">All Grades</option>
+      </select>
+      <select id="f-subject" class="cat-select" onchange="applyFilters()">
+        <option value="">All Subjects</option>
+      </select>
+      <select id="f-term" class="cat-select" onchange="applyFilters()">
+        <option value="">All Terms</option>
+      </select>
+      <button class="cat-btn-outline" onclick="clearFilters()">✕ Clear</button>
+    </div>
+
+    <!-- Results count -->
+    <div id="results-info" class="cat-results-info"></div>
+
+    <!-- Grid -->
+    <div id="schemes-grid" class="cat-grid"></div>
+    <div id="cat-empty" class="cat-empty hidden">
+      <div style="font-size:3rem">📂</div>
+      <p>No schemes match your filters. Try clearing some.</p>
+    </div>
+  </div>
+
+  <!-- ═══ CART TAB ═══ -->
+  <div id="tab-cart" class="cat-tab">
+    <h2 class="cat-section-title">🛒 Your Cart</h2>
+    <div id="cart-empty" class="cat-empty">
+      <div style="font-size:3rem">🛒</div>
+      <p>Your cart is empty. Browse the catalog and add schemes.</p>
+      <button class="cat-btn-primary" onclick="showTab('catalog',document.querySelector('[onclick*=catalog]'))">Browse Catalog →</button>
+    </div>
+    <div id="cart-items"></div>
+    <div id="cart-summary" class="cat-cart-summary hidden">
+      <div class="cat-summary-row">
+        <span>Subtotal</span><span id="summary-subtotal">KES 0</span>
+      </div>
+      <div class="cat-summary-row" id="wallet-row" style="display:none">
+        <span>💰 Wallet Credit</span><span id="summary-wallet" style="color:var(--cat-green)">- KES 0</span>
+      </div>
+      <div class="cat-summary-row total-row">
+        <span>Total to Pay</span><span id="summary-total">KES 0</span>
+      </div>
+
+      <div class="cat-wallet-apply" id="wallet-apply-section">
+        <label style="font-size:.85rem;font-weight:600">Your phone (to check wallet balance)</label>
+        <div style="display:flex;gap:.5rem;margin-top:.4rem">
+          <input type="text" id="wallet-phone" class="cat-input" placeholder="e.g. 0712345678" style="flex:1"/>
+          <button class="cat-btn-outline" onclick="checkWallet()">Check</button>
+        </div>
+        <div id="wallet-info" style="font-size:.85rem;margin-top:.4rem;color:var(--cat-green)"></div>
+        <div id="wallet-use-row" style="display:none;margin-top:.5rem">
+          <label style="display:flex;align-items:center;gap:.5rem;font-size:.85rem;cursor:pointer">
+            <input type="checkbox" id="use-wallet" onchange="toggleWallet()"/>
+            Use wallet balance to reduce payment
+          </label>
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:2px solid var(--cat-border);margin:1rem 0"/>
+      <h3 style="margin-bottom:1rem;font-size:1rem">Pay via Airtel Money</h3>
+      <div class="cat-airtel-card">
+        <div style="font-size:.8rem;opacity:.8;text-transform:uppercase;letter-spacing:.1em">Send to</div>
+        <div class="cat-airtel-number">0753538323</div>
+        <div style="font-size:.9rem;opacity:.8">KEVIN OGUTU</div>
+      </div>
+      <p style="font-size:.83rem;color:var(--cat-muted);margin:.8rem 0">
+        1. Open Airtel Money → Send Money<br/>
+        2. Enter <strong>0753538323</strong> and the amount shown above<br/>
+        3. Copy the Transaction ID from the SMS confirmation<br/>
+        4. Paste it below and click Submit
+      </p>
+      <div class="cat-form-group">
+        <label>Your Phone Number</label>
+        <input type="text" id="checkout-phone" class="cat-input" placeholder="e.g. 0712345678"/>
+      </div>
+      <div class="cat-form-group">
+        <label>Email (optional — for receipt)</label>
+        <input type="email" id="checkout-email" class="cat-input" placeholder="you@email.com"/>
+      </div>
+      <div class="cat-form-group" id="txid-group" style="display:none">
+        <label>Airtel Money Transaction ID</label>
+        <input type="text" id="checkout-txid" class="cat-input" placeholder="e.g. AT123456789" style="text-transform:uppercase"/>
+      </div>
+      <div class="cat-form-group">
+        <label>Referral Code (optional)</label>
+        <input type="text" id="checkout-ref" class="cat-input" placeholder="e.g. 07124ABC"/>
+      </div>
+      <p id="checkout-err" class="cat-error hidden"></p>
+      <p id="checkout-ok" class="cat-success hidden"></p>
+      <div style="display:flex;gap:.7rem;flex-wrap:wrap;margin-top:1rem">
+        <button class="cat-btn-primary" id="btn-place-order" onclick="placeOrder()">📤 Place Order</button>
+        <button class="cat-btn-outline" id="btn-submit-txid" onclick="submitTxid()" style="display:none">✅ Submit Transaction ID</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ DOWNLOADS TAB ═══ -->
+  <div id="tab-downloads" class="cat-tab">
+    <h2 class="cat-section-title">📥 Download Your Schemes</h2>
+    <div class="cat-download-card">
+      <p style="color:var(--cat-muted);font-size:.9rem;margin-bottom:1.2rem">
+        Enter your Order ID to retrieve your download links. You received this after checkout.
+      </p>
+      <div class="cat-form-group">
+        <label>Order ID</label>
+        <input type="text" id="dl-order-ref" class="cat-input" placeholder="e.g. SCH12345678" style="text-transform:uppercase"/>
+      </div>
+      <button class="cat-btn-primary" onclick="retrieveDownloads()">🔍 Get My Files</button>
+      <p id="dl-err" class="cat-error hidden" style="margin-top:.8rem"></p>
+    </div>
+    <div id="dl-results" class="hidden" style="margin-top:1.5rem">
+      <div class="cat-success" style="margin-bottom:1rem">✅ Order verified! Download your files below.</div>
+      <div id="dl-files"></div>
+    </div>
+  </div>
+
+  <!-- ═══ WALLET TAB ═══ -->
+  <div id="tab-wallet" class="cat-tab">
+    <h2 class="cat-section-title">💰 Wallet &amp; Earnings</h2>
+    <div class="cat-wallet-hero">
+      <div class="cat-wallet-info-card">
+        <div style="font-size:.85rem;opacity:.8">Wallet Balance</div>
+        <div class="cat-wallet-balance" id="wallet-balance-display">KES 0</div>
+        <div style="font-size:.82rem;opacity:.7" id="wallet-earned-display">Total earned: KES 0</div>
+      </div>
+      <p style="font-size:.85rem;color:var(--cat-muted);margin:1rem 0">
+        You earn <strong>KES 20</strong> added to your wallet for every successful purchase you make.
+        Use your wallet balance to pay for future schemes or withdraw to Airtel Money.
+      </p>
+    </div>
+    <div class="cat-download-card" style="margin-top:1rem">
+      <div class="cat-form-group">
+        <label>Your Phone Number</label>
+        <input type="text" id="wlt-phone" class="cat-input" placeholder="e.g. 0712345678"/>
+      </div>
+      <button class="cat-btn-outline" onclick="loadWallet()" style="margin-bottom:1rem">Check Balance</button>
+      <hr style="border:none;border-top:1px solid var(--cat-border);margin:1rem 0"/>
+      <h3 style="font-size:.95rem;margin-bottom:.8rem">Request Withdrawal</h3>
+      <p style="font-size:.82rem;color:var(--cat-muted);margin-bottom:.8rem">Minimum KES 50. Paid to your Airtel Money within 24 hours.</p>
+      <div class="cat-form-group">
+        <label>Amount to Withdraw (KES)</label>
+        <input type="number" id="wlt-amount" class="cat-input" placeholder="e.g. 100" min="50"/>
+      </div>
+      <button class="cat-btn-primary" onclick="requestWithdrawal()">💸 Request Withdrawal</button>
+      <p id="wlt-msg" class="cat-success hidden" style="margin-top:.8rem"></p>
+      <p id="wlt-err" class="cat-error hidden" style="margin-top:.8rem"></p>
+    </div>
+  </div>
+
+  <!-- ═══ REFERRAL TAB ═══ -->
+  <div id="tab-referral" class="cat-tab">
+    <h2 class="cat-section-title">🔗 Refer &amp; Earn 15%</h2>
+    <div class="cat-referral-hero">
+      <div class="cat-ref-steps">
+        <div class="cat-ref-step"><span class="cat-ref-num">1</span><span>Get your unique referral link below</span></div>
+        <div class="cat-ref-step"><span class="cat-ref-num">2</span><span>Share it with teachers &amp; schools</span></div>
+        <div class="cat-ref-step"><span class="cat-ref-num">3</span><span>Earn <strong>15%</strong> of every purchase they make</span></div>
+      </div>
+    </div>
+    <div class="cat-download-card" style="margin-top:1rem">
+      <div class="cat-form-group">
+        <label>Your Phone Number</label>
+        <input type="text" id="ref-phone" class="cat-input" placeholder="e.g. 0712345678"/>
+      </div>
+      <button class="cat-btn-primary" onclick="generateReferral()">🔗 Get My Referral Link</button>
+      <div id="ref-result" class="hidden" style="margin-top:1.2rem">
+        <label style="font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--cat-muted)">Your Referral Link</label>
+        <div class="cat-ref-link-box">
+          <span id="ref-link-text"></span>
+          <button class="cat-btn-copy" onclick="copyRefLink()">Copy</button>
+        </div>
+        <div class="cat-ref-stats" id="ref-stats"></div>
+        <!-- WhatsApp share -->
+        <a id="ref-wa-link" href="#" target="_blank" class="cat-btn-whatsapp">
+          💬 Share on WhatsApp
+        </a>
+      </div>
+      <p id="ref-err" class="cat-error hidden" style="margin-top:.8rem"></p>
+    </div>
+  </div>
+
+  <!-- ═══ ADMIN TAB ═══ -->
+  <div id="tab-admin" class="cat-tab">
+    <div id="admin-login-card" class="cat-download-card" style="max-width:360px;margin:2rem auto">
+      <h2 style="font-size:1.1rem;margin-bottom:1.2rem;text-align:center">🔐 Admin Login</h2>
+      <div class="cat-form-group">
+        <label>Admin Key</label>
+        <input type="password" id="admin-key" class="cat-input" placeholder="Enter key"/>
+      </div>
+      <button class="cat-btn-primary" style="width:100%" onclick="adminLogin()">Sign In</button>
+      <p id="admin-login-err" class="cat-error hidden" style="margin-top:.6rem"></p>
+    </div>
+
+    <div id="admin-panel" class="hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.8rem">
+        <h2 class="cat-section-title" style="margin:0">🛠️ Schemes Admin</h2>
+        <button class="cat-btn-outline" onclick="adminLogout()">Logout</button>
+      </div>
+
+      <!-- Admin Stats -->
+      <div class="cat-stats-grid" id="admin-stats-grid"></div>
+
+      <!-- Admin Tabs -->
+      <div class="cat-admin-tabs">
+        <button class="cat-admin-tab active" onclick="showAdminSection('schemes',this)">📚 Schemes</button>
+        <button class="cat-admin-tab" onclick="showAdminSection('orders',this)">📦 Orders</button>
+        <button class="cat-admin-tab" onclick="showAdminSection('withdrawals',this)">💸 Withdrawals</button>
+      </div>
+
+      <!-- Schemes Section -->
+      <div id="admin-schemes" class="admin-section active">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:1rem">
+          <button class="cat-btn-primary" onclick="openAddScheme()">+ Add Scheme</button>
+        </div>
+        <table class="cat-table">
+          <thead><tr><th>Title</th><th>Level</th><th>Grade</th><th>Subject</th><th>Term</th><th>Price</th><th>Downloads</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="admin-schemes-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Orders Section -->
+      <div id="admin-orders" class="admin-section">
+        <table class="cat-table">
+          <thead><tr><th>Order ID</th><th>Phone</th><th>Items</th><th>Total</th><th>Txn ID</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+          <tbody id="admin-orders-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Withdrawals Section -->
+      <div id="admin-withdrawals" class="admin-section">
+        <table class="cat-table">
+          <thead><tr><th>Phone</th><th>Amount</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+          <tbody id="admin-withdrawals-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end cat-container -->
+
+<!-- ═══ ADD/EDIT SCHEME MODAL ═══ -->
+<div id="scheme-modal" class="cat-modal-overlay hidden">
+  <div class="cat-modal">
+    <div class="cat-modal-header">
+      <h3 id="scheme-modal-title">Add Scheme</h3>
+      <button class="cat-modal-close" onclick="closeSchemeModal()">✕</button>
+    </div>
+    <input type="hidden" id="sm-id"/>
+    <div class="cat-modal-grid">
+      <div class="cat-form-group" style="grid-column:1/-1">
+        <label>Title</label>
+        <input type="text" id="sm-title" class="cat-input" placeholder="e.g. Grade 4 Mathematics Term 1 Scheme of Work"/>
+      </div>
+      <div class="cat-form-group">
+        <label>Level</label>
+        <select id="sm-level" class="cat-select">
+          <option value="">Select</option>
+          <option>Pre-Primary</option>
+          <option>Primary</option>
+          <option>Junior Secondary</option>
+          <option>Senior Secondary</option>
+        </select>
+      </div>
+      <div class="cat-form-group">
+        <label>Grade</label>
+        <select id="sm-grade" class="cat-select">
+          <option value="">Select</option>
+          <option>PP1</option><option>PP2</option>
+          <option>Grade 1</option><option>Grade 2</option><option>Grade 3</option>
+          <option>Grade 4</option><option>Grade 5</option><option>Grade 6</option>
+          <option>Grade 7</option><option>Grade 8</option><option>Grade 9</option>
+          <option>Form 1</option><option>Form 2</option><option>Form 3</option><option>Form 4</option>
+        </select>
+      </div>
+      <div class="cat-form-group">
+        <label>Subject</label>
+        <input type="text" id="sm-subject" class="cat-input" placeholder="e.g. Mathematics"/>
+      </div>
+      <div class="cat-form-group">
+        <label>Term</label>
+        <select id="sm-term" class="cat-select">
+          <option value="">Select</option>
+          <option value="1">Term 1</option>
+          <option value="2">Term 2</option>
+          <option value="3">Term 3</option>
+        </select>
+      </div>
+      <div class="cat-form-group">
+        <label>Price (KES)</label>
+        <input type="number" id="sm-price" class="cat-input" value="80" min="10"/>
+      </div>
+      <div class="cat-form-group" style="grid-column:1/-1">
+        <label>Description</label>
+        <textarea id="sm-desc" class="cat-input" rows="2" placeholder="Brief description..."></textarea>
+      </div>
+      <div class="cat-form-group" style="grid-column:1/-1">
+        <label>File URL (Google Drive direct download link)</label>
+        <input type="text" id="sm-file" class="cat-input" placeholder="https://drive.google.com/uc?export=download&id=..."/>
+      </div>
+      <div class="cat-form-group" style="grid-column:1/-1">
+        <label>Preview URL (optional — Google Drive view link)</label>
+        <input type="text" id="sm-preview" class="cat-input" placeholder="https://drive.google.com/file/d/.../view"/>
+      </div>
+    </div>
+    <p id="sm-err" class="cat-error hidden"></p>
+    <div class="cat-modal-footer">
+      <button class="cat-btn-outline" onclick="closeSchemeModal()">Cancel</button>
+      <button class="cat-btn-primary" onclick="saveScheme()">💾 Save Scheme</button>
+    </div>
+  </div>
+</div>
+
+<!-- floating cart button (mobile) -->
+<button id="fab-cart" class="cat-fab hidden" onclick="showTab('cart',document.querySelectorAll('.cat-tab-btn')[1])">
+  🛒 <span id="fab-count">0</span>
+</button>
+
+<script src="/static/js/catalog.js"></script>
+</body>
+</html>
