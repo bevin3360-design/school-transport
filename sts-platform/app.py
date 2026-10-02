@@ -14,13 +14,21 @@ import os, re, json
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'STS-PLATFORM-2026-SUPERKEY')
-if os.environ.get('RENDER'):
-    db_path = '/tmp/sts_platform.db'
+
+# â”€â”€ DATABASE: PostgreSQL in production, SQLite locally â”€â”€
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+if DATABASE_URL:
+    # Render gives postgres:// but SQLAlchemy needs postgresql://
+    if DATABASE_URL.startswith('postgres://'):
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 else:
+    # Local development â€” use SQLite
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            'instance', 'sts_platform.db')
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 CORS(app)
@@ -153,7 +161,7 @@ class PlatformSettings(db.Model):
     trial_days   = db.Column(db.Integer,     default=30)
     updated_at   = db.Column(db.DateTime,    default=datetime.utcnow)
 
-# â"€â"€ GPS TRACKING MODELS â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+# ï¿½"ï¿½ï¿½"ï¿½ GPS TRACKING MODELS ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½ï¿½"ï¿½
 class Driver(db.Model):
     id            = db.Column(db.Integer, primary_key=True)
     school_id     = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=False)
@@ -441,9 +449,9 @@ def check_session():
                         'school_id': session.get('school_id')})
     return jsonify({'type': None})
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 # DRIVER & PARENT AUTH + GPS TRACKING APIs
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
 @app.route('/api/driver/login', methods=['POST'])
 def driver_login():

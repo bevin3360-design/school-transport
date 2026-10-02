@@ -4,12 +4,20 @@ services:
     env: python
     region: oregon
     plan: free
+    rootDir: sts-platform
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
     envVars:
       - key: SECRET_KEY
         generateValue: true
-      - key: RENDER
-        value: "1"
       - key: PYTHON_VERSION
         value: "3.11.9"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mytransport-db
+          property: connectionString
+
+databases:
+  - name: mytransport-db
+    plan: free
+    region: oregon
