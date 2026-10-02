@@ -41,6 +41,7 @@ function showSection(name, el) {
   if (name === 'dashboard') loadAll();
   if (name === 'settings')  loadSettings();
   if (name === 'drill')     populateDrillSchools();
+  if (name === 'tracking')  initSuperTracking();
 }
 
 function openModal(id)  { document.getElementById(id).classList.remove('hidden'); }
@@ -426,3 +427,113 @@ async function logout() {
 }
 
 init();
+
+// ══════════════════════════════════════════════════════
+// LIVE GPS TRACKING — SUPER ADMIN (ALL SCHOOLS)
+// ══════════════════════════════════════════════════════
+let superMap = null;
+let superMarkers = {};
+let superTrackingInterval = null;
+
+function initSuperTracking() {
+  setTimeout(() => {
+    if (!superMap) {
+      superMap = L.map('super-map').setView([-1.2921, 36.8219], 7);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors', maxZoom: 19
+      }).addTo(superMap);
+    }
+    refreshSuperTracking();
+    if (superTrackingInterval) clearInterval(superTrackingInterval);
+    superTrackingInterval = setInterval(refreshSuperTracking, 15000);
+  }, 100);
+}
+
+async function refreshSuperTracking() {
+  try {
+    const r = await fetch('/api/super/tracking');
+    if (!r.ok) return;
+    const drivers = await r.json();
+    renderSuperCards(drivers);
+    updateSuperMapMarkers(drivers);
+  } catch (e) {
+    console.error('Super tracking error:', e);
+  }
+}
+
+function renderSuperCards(drivers) {
+  const container = document.getElementById('super-tracking-cards');
+  if (!container) return;
+
+  const live = drivers.filter(d => d.is_tracking && d.latitude);
+  const offline = drivers.filter(d => !d.is_tracking || !d.latitude);
+
+  if (drivers.length === 0) {
+    container.innerHTML = '<p style="color:var(--muted);">No drivers registered across any school yet.</p>';
+    return;
+  }
+
+  // Summary bar
+  let html = `
+    <div style="width:100%;background:var(--white);border-radius:10px;padding:1rem;box-shadow:var(--sh);display:flex;gap:2rem;flex-wrap:wrap;">
+      <div><span style="font-size:1.5rem;font-weight:700;color:#2ecc71;">${live.length}</span><div style="font-size:0.8rem;color:var(--muted);">Live Now</div></div>
+      <div><span style="font-size:1.5rem;font-weight:700;color:var(--muted);">${offline.length}</span><div style="font-size:0.8rem;color:var(--muted);">Offline</div></div>
+      <div><span style="font-size:1.5rem;font-weight:700;color:var(--primary);">${drivers.length}</span><div style="font-size:0.8rem;color:var(--muted);">Total Drivers</div></div>
+    </div>`;
+
+  // Live driver cards
+  html += live.map(d => `
+    <div onclick="focusSuperDriver(${d.id})" style="
+      background:var(--white);border-radius:10px;padding:1rem;
+      box-shadow:var(--sh);cursor:pointer;min-width:180px;flex:1;
+      border-left:4px solid #2ecc71;">
+      <div style="font-weight:700;font-size:0.9rem;">${d.name}</div>
+      <div style="font-size:0.8rem;color:var(--muted);">${d.school_name}</div>
+      <div style="font-size:0.8rem;color:var(--muted);">${d.route_name || 'No route'}</div>
+      <div style="font-size:0.75rem;color:#2ecc71;margin-top:0.3rem;">● LIVE — tap to view</div>
+    </div>`).join('');
+
+  container.innerHTML = html;
+}
+
+function updateSuperMapMarkers(drivers) {
+  if (!superMap) return;
+
+  const busIcon = L.divIcon({
+    html: '<div style="font-size:22px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));">🚌</div>',
+    className: '', iconSize: [28, 28], iconAnchor: [14, 14]
+  });
+
+  drivers.forEach(d => {
+    if (!d.is_tracking || !d.latitude || !d.longitude) {
+      if (superMarkers[d.id]) {
+        superMap.removeLayer(superMarkers[d.id]);
+        delete superMarkers[d.id];
+      }
+      return;
+    }
+
+    const pos = [d.latitude, d.longitude];
+    const popup = `<strong>${d.name}</strong><br>${d.school_name}<br>${d.route_name || 'No route'}<br><span style="color:#2ecc71;">● Live</span>`;
+
+    if (superMarkers[d.id]) {
+      superMarkers[d.id].setLatLng(pos);
+      superMarkers[d.id].setPopupContent(popup);
+    } else {
+      superMarkers[d.id] = L.marker(pos, { icon: busIcon }).addTo(superMap).bindPopup(popup);
+    }
+  });
+
+  const livePositions = drivers
+    .filter(d => d.is_tracking && d.latitude && d.longitude)
+    .map(d => [d.latitude, d.longitude]);
+
+  if (livePositions.length === 1) superMap.setView(livePositions[0], 15);
+  else if (livePositions.length > 1) superMap.fitBounds(livePositions, { padding: [50, 50] });
+}
+
+function focusSuperDriver(id) {
+  if (!superMap || !superMarkers[id]) return;
+  superMap.setView(superMarkers[id].getLatLng(), 16);
+  superMarkers[id].openPopup();
+}

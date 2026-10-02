@@ -10,6 +10,8 @@
 <link rel="manifest" href="/static/manifest.json"/>
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
 <link rel="stylesheet" href="/static/css/style.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body class="dash-body">
 <nav class="topnav">
@@ -27,6 +29,7 @@
       <li class="nav-item active" onclick="showSection('roster',this)">📋 Roster</li>
       <li class="nav-item" onclick="showSection('teachers',this)">👩‍🏫 Teachers</li>
       <li class="nav-item" onclick="showSection('routes',this)">🗺️ Routes</li>
+      <li class="nav-item" onclick="showSection('tracking',this)">📍 Live Tracking</li>
       <li class="nav-item" onclick="showSection('drivers',this)">🚗 Drivers</li>
       <li class="nav-item" onclick="showSection('parents',this)">👨‍👩‍👧 Parents</li>
       <li class="nav-item" onclick="showSection('logs',this)">📝 Logs</li>
@@ -63,9 +66,19 @@
       <tbody id="teachers-body"></tbody></table>
     </section>
 
+    <!-- LIVE TRACKING -->
+    <section id="section-tracking" class="section">
+      <div class="section-header">
+        <h2>📍 Live GPS Tracking</h2>
+        <button class="btn-outline" onclick="refreshTracking()">🔄 Refresh</button>
+      </div>
+      <div id="tracking-cards" style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;"></div>
+      <div id="admin-map" style="height:450px;border-radius:10px;border:2px solid var(--grey);"></div>
+      <p style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem;">Map auto-refreshes every 15 seconds. Click a driver card to centre on their bus.</p>
+    </section>
+
     <!-- ROUTES -->
-    <section id="section-routes" class="section">
-      <div class="section-header"><h2>Routes</h2>
+    <section id="section-routes" class="section">      <div class="section-header"><h2>Routes</h2>
         <button class="btn-primary" onclick="openAddRoute()">+ Add Route</button></div>
       <table class="data-table"><thead><tr><th>Route Name</th><th>Description</th><th>Morning</th><th>Active</th><th>Actions</th></tr></thead>
       <tbody id="routes-body"></tbody></table>

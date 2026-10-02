@@ -784,6 +784,8 @@ def admin_drivers():
         'assigned_route_id': d.assigned_route_id,
         'assigned_route_name': d.assigned_route.name if d.assigned_route else None,
         'is_tracking': d.is_tracking,
+        'latitude': d.current_latitude,
+        'longitude': d.current_longitude,
         'last_location_update': d.last_location_update.isoformat() if d.last_location_update else None
     } for d in drivers])
 
@@ -1487,6 +1489,24 @@ def super_view_routes(sid):
     routes = Route.query.filter_by(school_id=sid).all()
     return jsonify([{'id': r.id, 'name': r.name, 'description': r.description,
                      'is_morning': r.is_morning, 'active': r.active} for r in routes])
+
+# ── Super admin: live GPS tracking all schools ─
+@app.route('/api/super/tracking')
+def super_tracking():
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    drivers = Driver.query.filter_by(active=True).all()
+    return jsonify([{
+        'id': d.id,
+        'name': d.name,
+        'phone': d.phone,
+        'school_id': d.school_id,
+        'school_name': d.school.name if d.school else None,
+        'route_name': d.assigned_route.name if d.assigned_route else None,
+        'is_tracking': d.is_tracking,
+        'latitude': d.current_latitude,
+        'longitude': d.current_longitude,
+        'last_update': d.last_location_update.isoformat() if d.last_location_update else None
+    } for d in drivers])
 
 
 # ----------------------------------------

@@ -9,6 +9,7 @@ function showSection(name,el){
   if(name==='roster'){loadRoster();loadWeek();}
   if(name==='teachers')loadTeachers();
   if(name==='routes')loadRoutes();
+  if(name==='tracking')loadTrackingSection();
   if(name==='drivers')loadDrivers();
   if(name==='parents')loadParents();
   if(name==='logs')loadLogs();
@@ -558,4 +559,139 @@ function shareViaSMS() {
 function loadShareLink() {
   const el = document.getElementById('app-url');
   if (el) el.textContent = getAppUrl();
+}
+
+// ══════════════════════════════════════════════════════
+// LIVE GPS TRACKING — ADMIN VIEW
+// ══════════════════════════════════════════════════════
+let adminMap = null;
+let adminMarkers = {};
+let trackingRefreshInterval = null;
+
+function initAdminMap() {
+  if (adminMap) return; // already initialized
+  adminMap = L.map('admin-map').setView([-1.2921, 36.8219], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors', maxZoom: 19
+  }).addTo(adminMap);
+}
+
+async function loadTrackingSection() {
+  // Small delay to ensure the section is visible before initializing map
+  setTimeout(() => {
+    initAdminMap();
+    refreshTracking();
+    // Auto-refresh every 15 seconds
+    if (trackingRefreshInterval) clearInterval(trackingRefreshInterval);
+    trackingRefreshInterval = setInterval(refreshTracking, 15000);
+  }, 100);
+}
+
+async function refreshTracking() {
+  try {
+    const r = await fetch('/api/admin/drivers');
+    if (!r.ok) return;
+    const drivers = await r.json();
+    renderTrackingCards(drivers);
+    updateAdminMapMarkers(drivers);
+  } catch (e) {
+    console.error('Tracking error:', e);
+  }
+}
+
+function renderTrackingCards(drivers) {
+  const container = document.getElementById('tracking-cards');
+  if (!container) return;
+
+  if (drivers.length === 0) {
+    container.innerHTML = '<p style="color:var(--muted);">No drivers added yet. Add drivers first.</p>';
+    return;
+  }
+
+  container.innerHTML = drivers.map(d => {
+    const isLive = d.is_tracking && d.latitude && d.longitude;
+    const lastUpdate = d.last_location_update
+      ? (() => { const mins = Math.floor((Date.now() - new Date(d.last_location_update)) / 60000); return mins < 1 ? 'Just now' : `${mins}m ago`; })()
+      : 'Never';
+
+    return `
+      <div onclick="focusDriver(${d.id})" style="
+        background:var(--white);border-radius:10px;padding:1rem;
+        box-shadow:var(--sh);cursor:pointer;min-width:200px;flex:1;
+        border-left:4px solid ${isLive ? '#2ecc71' : '#ccc'};
+        transition:transform 0.2s;
+      " onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+          <strong style="font-size:0.95rem;">${d.name}</strong>
+          <span style="font-size:0.75rem;font-weight:700;color:${isLive ? '#2ecc71' : '#aaa'};">
+            ${isLive ? '● LIVE' : '○ OFFLINE'}
+          </span>
+        </div>
+        <div style="font-size:0.82rem;color:var(--muted);">
+          ${d.assigned_route_name || 'No route assigned'}
+        </div>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:0.3rem;">
+          Updated: ${lastUpdate}
+        </div>
+        ${isLive ? `<div style="font-size:0.75rem;color:#2ecc71;margin-top:0.3rem;">📍 Tap to view on map</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+function updateAdminMapMarkers(drivers) {
+  if (!adminMap) return;
+
+  const busIcon = L.divIcon({
+    html: '<div style="font-size:22px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));">🚌</div>',
+    className: '', iconSize: [28, 28], iconAnchor: [14, 14]
+  });
+
+  const offlineIcon = L.divIcon({
+    html: '<div style="font-size:18px;opacity:0.4;">🚌</div>',
+    className: '', iconSize: [24, 24], iconAnchor: [12, 12]
+  });
+
+  drivers.forEach(d => {
+    const isLive = d.is_tracking && d.latitude && d.longitude;
+    if (!isLive) {
+      // Remove old marker if driver went offline
+      if (adminMarkers[d.id]) {
+        adminMap.removeLayer(adminMarkers[d.id]);
+        delete adminMarkers[d.id];
+      }
+      return;
+    }
+
+    const pos = [d.latitude, d.longitude];
+    const popupText = `<strong>${d.name}</strong><br>${d.assigned_route_name || 'No route'}<br><span style="color:#2ecc71;">● Live</span>`;
+
+    if (adminMarkers[d.id]) {
+      adminMarkers[d.id].setLatLng(pos);
+      adminMarkers[d.id].setPopupContent(popupText);
+    } else {
+      adminMarkers[d.id] = L.marker(pos, { icon: busIcon })
+        .addTo(adminMap)
+        .bindPopup(popupText);
+    }
+  });
+
+  // If any live drivers, fit map to show all of them
+  const livePositions = drivers
+    .filter(d => d.is_tracking && d.latitude && d.longitude)
+    .map(d => [d.latitude, d.longitude]);
+
+  if (livePositions.length > 0) {
+    if (livePositions.length === 1) {
+      adminMap.setView(livePositions[0], 15);
+    } else {
+      adminMap.fitBounds(livePositions, { padding: [50, 50] });
+    }
+  }
+}
+
+function focusDriver(driverId) {
+  if (!adminMap || !adminMarkers[driverId]) return;
+  const marker = adminMarkers[driverId];
+  adminMap.setView(marker.getLatLng(), 16);
+  marker.openPopup();
 }

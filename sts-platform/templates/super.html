@@ -10,6 +10,8 @@
 <link rel="manifest" href="/static/manifest.json"/>
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
 <link rel="stylesheet" href="/static/css/style.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body class="dash-body">
 
@@ -38,6 +40,7 @@
     <ul class="nav-menu">
       <li class="nav-item active" onclick="showSection('dashboard',this)">📊 Dashboard</li>
       <li class="nav-item" onclick="showSection('schools',this)">🏫 Schools</li>
+      <li class="nav-item" onclick="showSection('tracking',this)">📍 Live Tracking</li>
       <li class="nav-item" onclick="showSection('drill',this)">🔍 School Drill</li>
       <li class="nav-item" onclick="showSection('payments',this)">💳 Payments</li>
       <li class="nav-item" onclick="showSection('logs',this)">📝 Logs</li>
@@ -61,6 +64,19 @@
           Review Now →
         </button>
       </div>
+    </section>
+
+    <!-- ═══ LIVE TRACKING ═══ -->
+    <section id="section-tracking" class="section">
+      <div class="section-header">
+        <h2>📍 Live GPS Tracking — All Schools</h2>
+        <button class="btn-outline" onclick="refreshSuperTracking()">🔄 Refresh</button>
+      </div>
+      <div id="super-tracking-cards" style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;"></div>
+      <div id="super-map" style="height:500px;border-radius:10px;border:2px solid var(--grey);"></div>
+      <p style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem;">
+        Showing all active drivers across all schools. Auto-refreshes every 15 seconds.
+      </p>
     </section>
 
     <!-- ═══ SCHOOLS ═══ -->
