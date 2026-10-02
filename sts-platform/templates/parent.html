@@ -291,6 +291,57 @@ async function logout() {
 
 // Initialize on load
 window.addEventListener('DOMContentLoaded', init);
+
+// ══════════════════════════════════════════════════════
+// SERVICE WORKER & AUTO-UPDATE
+// ══════════════════════════════════════════════════════
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js').then(reg => {
+    window._swReg = reg;
+    reg.addEventListener('updatefound', () => {
+      const newWorker = reg.installing;
+      newWorker.addEventListener('statechange', () => {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          // New version available - show update banner
+          showUpdateBanner();
+        }
+      });
+    });
+  }).catch(() => {});
+}
+
+function showUpdateBanner() {
+  const banner = document.createElement('div');
+  banner.id = 'update-banner';
+  banner.style.cssText = `
+    position: fixed; top: 0; left: 0; right: 0;
+    background: linear-gradient(135deg, #2ecc71, #27ae60);
+    color: white; padding: 1rem; text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 9999;
+  `;
+  banner.innerHTML = `
+    <strong>✨ Update Available!</strong> 
+    <button onclick="updateApp()" style="
+      background: white; color: #27ae60; border: none;
+      padding: 0.5rem 1.5rem; border-radius: 6px; margin-left: 1rem;
+      font-weight: 600; cursor: pointer;
+    ">Update Now</button>
+  `;
+  document.body.insertBefore(banner, document.body.firstChild);
+}
+
+function updateApp() {
+  if (window._swReg && window._swReg.waiting) {
+    window._swReg.waiting.postMessage({ type: 'SKIP_WAITING' });
+    window._swReg.waiting.addEventListener('statechange', e => {
+      if (e.target.state === 'activated') {
+        window.location.reload();
+      }
+    });
+  } else {
+    window.location.reload();
+  }
+}
 </script>
 </body>
 </html>

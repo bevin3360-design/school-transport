@@ -194,6 +194,7 @@ async function loadSettings(){
   document.getElementById('s-morning').checked=d.morning_active;
   document.getElementById('s-evening').checked=d.evening_active;
   document.getElementById('s-link').value=d.public_link||'';
+  loadShareLink();
 }
 async function saveSettings(){
   const r=await fetch('/api/school/settings',{method:'PUT',headers:{'Content-Type':'application/json'},
@@ -510,4 +511,49 @@ async function populateRouteDropdown(selectId) {
     opt.textContent = `${route.name} (${route.is_morning ? 'Morning' : 'Evening'})`;
     select.appendChild(opt);
   });
+}
+
+// ══════════════════════════════════════════════════════
+// SHARE / INSTALL APP LINK
+// ══════════════════════════════════════════════════════
+function getAppUrl() {
+  return window.location.origin; // e.g. https://mytransport.onrender.com
+}
+
+function copyAppLink() {
+  const url = getAppUrl();
+  navigator.clipboard.writeText(url).then(() => {
+    const msg = document.getElementById('copy-msg');
+    msg.classList.remove('hidden');
+    setTimeout(() => msg.classList.add('hidden'), 3000);
+  }).catch(() => {
+    // Fallback for older browsers
+    const el = document.createElement('textarea');
+    el.value = url;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    const msg = document.getElementById('copy-msg');
+    msg.classList.remove('hidden');
+    setTimeout(() => msg.classList.add('hidden'), 3000);
+  });
+}
+
+function shareViaWhatsApp() {
+  const url = getAppUrl();
+  const text = `Install *My School Transport* app on your phone:\n\n${url}\n\nOpen the link → tap Install/Add to Home Screen`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+}
+
+function shareViaSMS() {
+  const url = getAppUrl();
+  const text = `Install My School Transport app: ${url} — Open in browser, tap Add to Home Screen`;
+  window.location.href = `sms:?body=${encodeURIComponent(text)}`;
+}
+
+// Set the displayed app URL on settings load
+function loadShareLink() {
+  const el = document.getElementById('app-url');
+  if (el) el.textContent = getAppUrl();
 }

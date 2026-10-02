@@ -102,22 +102,84 @@
     <!-- SETTINGS -->
     <section id="section-settings" class="section">
       <div class="section-header"><h2>Settings</h2></div>
-      <div style="background:var(--white);border-radius:var(--r);padding:1.8rem;max-width:500px;box-shadow:var(--sh)">
-        <h3 style="margin-bottom:1rem;font-size:1rem">🚌 Route Activation</h3>
-        <div class="form-group toggle-row">
-          <label>🌅 Morning Routes Active</label>
-          <label class="toggle"><input type="checkbox" id="s-morning"/><span class="slider"></span></label>
+      <div style="display:flex;flex-direction:column;gap:1.2rem;max-width:520px;">
+
+        <!-- Route Activation -->
+        <div style="background:var(--white);border-radius:var(--r);padding:1.8rem;box-shadow:var(--sh)">
+          <h3 style="margin-bottom:1rem;font-size:1rem">🚌 Route Activation</h3>
+          <div class="form-group toggle-row">
+            <label>🌅 Morning Routes Active</label>
+            <label class="toggle"><input type="checkbox" id="s-morning"/><span class="slider"></span></label>
+          </div>
+          <div class="form-group toggle-row">
+            <label>🌆 Evening Routes Active</label>
+            <label class="toggle"><input type="checkbox" id="s-evening"/><span class="slider"></span></label>
+          </div>
+          <hr style="margin:1.2rem 0;border:none;border-top:2px solid var(--grey)"/>
+          <h3 style="margin-bottom:1rem;font-size:1rem">🔗 Share Link</h3>
+          <div class="form-group"><label>Public URL</label>
+            <input type="text" id="s-link" placeholder="https://your-app.onrender.com"/></div>
+          <button class="btn-primary" onclick="saveSettings()">💾 Save Settings</button>
+          <p id="settings-msg" class="success-msg hidden">✔ Saved.</p>
         </div>
-        <div class="form-group toggle-row">
-          <label>🌆 Evening Routes Active</label>
-          <label class="toggle"><input type="checkbox" id="s-evening"/><span class="slider"></span></label>
+
+        <!-- Install / Share App Card -->
+        <div style="background:var(--white);border-radius:var(--r);padding:1.8rem;box-shadow:var(--sh)">
+          <h3 style="margin-bottom:0.5rem;font-size:1rem">📲 Share App Link</h3>
+          <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1rem;">
+            Share this link with teachers, drivers and parents so they can install the app on their phone — no app store needed.
+          </p>
+          <div style="display:flex;gap:0.5rem;align-items:center;background:var(--bg);padding:0.8rem;border-radius:8px;margin-bottom:1rem;">
+            <span id="app-url" style="font-size:0.85rem;font-weight:600;flex:1;word-break:break-all;">https://mytransport.onrender.com</span>
+            <button class="btn-primary" onclick="copyAppLink()" style="padding:0.5rem 1rem;white-space:nowrap;">📋 Copy</button>
+          </div>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button class="btn-secondary" onclick="shareViaWhatsApp()" style="flex:1;">
+              💬 Share via WhatsApp
+            </button>
+            <button class="btn-secondary" onclick="shareViaSMS()" style="flex:1;">
+              📱 Share via SMS
+            </button>
+          </div>
+          <p id="copy-msg" class="success-msg hidden" style="margin-top:0.5rem;">✔ Link copied!</p>
         </div>
-        <hr style="margin:1.2rem 0;border:none;border-top:2px solid var(--grey)"/>
-        <h3 style="margin-bottom:1rem;font-size:1rem">🔗 Share Link</h3>
-        <div class="form-group"><label>Public URL</label>
-          <input type="text" id="s-link" placeholder="https://your-app.onrender.com"/></div>
-        <button class="btn-primary" onclick="saveSettings()">💾 Save Settings</button>
-        <p id="settings-msg" class="success-msg hidden">✔ Saved.</p>
+
+        <!-- How to Install Card -->
+        <div style="background:var(--white);border-radius:var(--r);padding:1.8rem;box-shadow:var(--sh)">
+          <h3 style="margin-bottom:1rem;font-size:1rem">📱 How to Install App</h3>
+          <div style="display:flex;flex-direction:column;gap:0.8rem;font-size:0.88rem;">
+            <div style="background:var(--bg);padding:0.8rem;border-radius:8px;">
+              <strong>🤖 Android (Chrome):</strong>
+              <ol style="margin:0.5rem 0 0 1.2rem;padding:0;line-height:1.8;">
+                <li>Open the link in Chrome</li>
+                <li>Tap ⋮ menu (top right)</li>
+                <li>Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong></li>
+                <li>Tap <strong>Install</strong></li>
+              </ol>
+            </div>
+            <div style="background:var(--bg);padding:0.8rem;border-radius:8px;">
+              <strong>🍎 iPhone / iPad (Safari):</strong>
+              <ol style="margin:0.5rem 0 0 1.2rem;padding:0;line-height:1.8;">
+                <li>Open the link in <strong>Safari</strong></li>
+                <li>Tap the <strong>Share</strong> button (box with arrow)</li>
+                <li>Scroll and tap <strong>"Add to Home Screen"</strong></li>
+                <li>Tap <strong>Add</strong></li>
+              </ol>
+            </div>
+            <div style="background:var(--bg);padding:0.8rem;border-radius:8px;">
+              <strong>💻 Desktop (Chrome / Edge):</strong>
+              <ol style="margin:0.5rem 0 0 1.2rem;padding:0;line-height:1.8;">
+                <li>Open the link in Chrome or Edge</li>
+                <li>Click the <strong>⊕ Install</strong> icon in the address bar</li>
+                <li>Click <strong>Install</strong></li>
+              </ol>
+            </div>
+            <div style="background:#fff8e1;padding:0.8rem;border-radius:8px;border-left:3px solid var(--gold);">
+              <strong>✨ Auto Updates:</strong> Once installed, the app updates automatically whenever a new version is deployed. Users see an <em>"Update Available"</em> banner and tap <strong>Update Now</strong>.
+            </div>
+          </div>
+        </div>
+
       </div>
     </section>
   </main>
