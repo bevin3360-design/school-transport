@@ -12,8 +12,261 @@
 <link rel="manifest" href="/static/manifest.json"/>
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
 <link rel="stylesheet" href="/static/css/style.css"/>
+<style>
+/* ── SPLASH SCREEN ───────────────────────────── */
+#splash {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #0a2342 0%, #1a5276 50%, #0a2342 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  transition: opacity 0.6s ease, visibility 0.6s ease;
+}
+#splash.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Road */
+.road {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: #1a1a2e;
+  overflow: hidden;
+}
+.road-line {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 6px;
+  width: 80px;
+  background: #f0c040;
+  border-radius: 3px;
+  animation: roadMove 0.6s linear infinite;
+}
+.road-line:nth-child(1) { left: 10%; animation-delay: 0s; }
+.road-line:nth-child(2) { left: 30%; animation-delay: -0.15s; }
+.road-line:nth-child(3) { left: 50%; animation-delay: -0.3s; }
+.road-line:nth-child(4) { left: 70%; animation-delay: -0.45s; }
+.road-line:nth-child(5) { left: 90%; animation-delay: -0.6s; }
+
+@keyframes roadMove {
+  0%   { transform: translateY(-50%) translateX(0); opacity: 1; }
+  100% { transform: translateY(-50%) translateX(-200px); opacity: 0.3; }
+}
+
+/* Bus SVG container */
+.bus-wrap {
+  position: relative;
+  margin-bottom: 100px;
+  animation: busBounce 0.5s ease-in-out infinite alternate;
+}
+@keyframes busBounce {
+  0%   { transform: translateY(0px); }
+  100% { transform: translateY(-8px); }
+}
+
+/* Bus SVG */
+.bus-svg {
+  width: 200px;
+  height: auto;
+  filter: drop-shadow(0 10px 30px rgba(240,192,64,0.4));
+}
+
+/* Wheels spinning */
+.wheel {
+  animation: wheelSpin 0.4s linear infinite;
+  transform-origin: center;
+}
+@keyframes wheelSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Exhaust puffs */
+.puff {
+  position: absolute;
+  left: -10px;
+  bottom: 20px;
+  width: 12px;
+  height: 12px;
+  background: rgba(255,255,255,0.3);
+  border-radius: 50%;
+  animation: puffMove 1s ease-out infinite;
+}
+.puff:nth-child(2) { animation-delay: 0.33s; width:8px; height:8px; }
+.puff:nth-child(3) { animation-delay: 0.66s; width:6px; height:6px; }
+@keyframes puffMove {
+  0%   { transform: translate(0,0) scale(1); opacity: 0.6; }
+  100% { transform: translate(-40px,-20px) scale(2); opacity: 0; }
+}
+
+/* Stars / speed lines */
+.speed-line {
+  position: absolute;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+  border-radius: 2px;
+  animation: speedMove 0.8s linear infinite;
+}
+.speed-line:nth-child(1) { width: 60px; top: 30%; left: -80px; animation-delay: 0s; }
+.speed-line:nth-child(2) { width: 40px; top: 50%; left: -60px; animation-delay: 0.2s; }
+.speed-line:nth-child(3) { width: 80px; top: 70%; left: -100px; animation-delay: 0.4s; }
+@keyframes speedMove {
+  0%   { transform: translateX(0); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: translateX(300px); opacity: 0; }
+}
+
+/* App name */
+.splash-title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 1px;
+  margin-bottom: 0.3rem;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+.splash-sub {
+  font-size: 0.95rem;
+  color: rgba(255,255,255,0.7);
+  margin-bottom: 2rem;
+}
+
+/* Loading dots */
+.loading-dots {
+  display: flex;
+  gap: 8px;
+  margin-top: 1rem;
+}
+.dot {
+  width: 10px;
+  height: 10px;
+  background: #f0c040;
+  border-radius: 50%;
+  animation: dotBounce 0.6s ease-in-out infinite alternate;
+}
+.dot:nth-child(1) { animation-delay: 0s; }
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dotBounce {
+  0%   { transform: translateY(0); opacity: 0.4; }
+  100% { transform: translateY(-10px); opacity: 1; }
+}
+
+/* Loading text */
+.loading-text {
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.5);
+  margin-top: 1rem;
+  animation: fadeText 2s ease-in-out infinite;
+}
+@keyframes fadeText {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 1; }
+}
+</style>
 </head>
 <body>
+
+<!-- ══════════ ANIMATED SPLASH SCREEN ══════════ -->
+<div id="splash">
+  <!-- Speed lines -->
+  <div class="speed-line"></div>
+  <div class="speed-line"></div>
+  <div class="speed-line"></div>
+
+  <!-- Animated Bus -->
+  <div class="bus-wrap">
+    <!-- Exhaust puffs -->
+    <div class="puff"></div>
+    <div class="puff"></div>
+    <div class="puff"></div>
+
+    <!-- Inline SVG School Bus -->
+    <svg class="bus-svg" viewBox="0 0 220 100" xmlns="http://www.w3.org/2000/svg">
+      <!-- Bus Body -->
+      <rect x="20" y="20" width="175" height="55" rx="10" ry="10" fill="#f0c040"/>
+      <!-- Front bumper -->
+      <rect x="185" y="55" width="18" height="12" rx="4" fill="#e0a800"/>
+      <!-- Rear bumper -->
+      <rect x="17" y="55" width="10" height="12" rx="4" fill="#e0a800"/>
+      <!-- Roof -->
+      <rect x="25" y="14" width="130" height="10" rx="5" fill="#e0a800"/>
+      <!-- Emergency lights -->
+      <rect x="30" y="10" width="12" height="6" rx="3" fill="#ff4444"/>
+      <rect x="48" y="10" width="12" height="6" rx="3" fill="#ff4444"/>
+      <!-- Windows -->
+      <rect x="30" y="26" width="25" height="18" rx="3" fill="#a8d8f0"/>
+      <rect x="62" y="26" width="25" height="18" rx="3" fill="#a8d8f0"/>
+      <rect x="94" y="26" width="25" height="18" rx="3" fill="#a8d8f0"/>
+      <rect x="126" y="26" width="25" height="18" rx="3" fill="#a8d8f0"/>
+      <!-- Driver window -->
+      <rect x="170" y="26" width="22" height="18" rx="3" fill="#a8d8f0"/>
+      <!-- Door -->
+      <rect x="158" y="40" width="16" height="25" rx="3" fill="#e0a800"/>
+      <circle cx="162" cy="53" r="2" fill="#f0c040"/>
+      <!-- SCHOOL text -->
+      <text x="60" y="55" font-family="Arial" font-weight="bold" font-size="11" fill="#1a5276">MY TRANSPORT</text>
+      <!-- Headlight -->
+      <ellipse cx="198" cy="47" rx="6" ry="5" fill="#fffbe0" opacity="0.9"/>
+      <ellipse cx="199" cy="47" rx="3" ry="3" fill="#fff"/>
+      <!-- Tail light -->
+      <rect x="18" y="42" width="6" height="8" rx="2" fill="#ff6666"/>
+      <!-- Wheel wells -->
+      <ellipse cx="55" cy="76" rx="20" ry="8" fill="#1a1a2e" opacity="0.5"/>
+      <ellipse cx="155" cy="76" rx="20" ry="8" fill="#1a1a2e" opacity="0.5"/>
+      <!-- Wheels -->
+      <g class="wheel" style="transform-origin:55px 76px">
+        <circle cx="55" cy="76" r="16" fill="#333"/>
+        <circle cx="55" cy="76" r="10" fill="#555"/>
+        <circle cx="55" cy="76" r="4" fill="#888"/>
+        <line x1="55" y1="60" x2="55" y2="92" stroke="#777" stroke-width="2"/>
+        <line x1="39" y1="76" x2="71" y2="76" stroke="#777" stroke-width="2"/>
+      </g>
+      <g class="wheel" style="transform-origin:155px 76px">
+        <circle cx="155" cy="76" r="16" fill="#333"/>
+        <circle cx="155" cy="76" r="10" fill="#555"/>
+        <circle cx="155" cy="76" r="4" fill="#888"/>
+        <line x1="155" y1="60" x2="155" y2="92" stroke="#777" stroke-width="2"/>
+        <line x1="139" y1="76" x2="171" y2="76" stroke="#777" stroke-width="2"/>
+      </g>
+      <!-- GPS ping on roof -->
+      <circle cx="110" cy="12" r="4" fill="#2ecc71"/>
+      <circle cx="110" cy="12" r="8" fill="none" stroke="#2ecc71" stroke-width="1.5" opacity="0.6">
+        <animate attributeName="r" values="4;14" dur="1.5s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.8;0" dur="1.5s" repeatCount="indefinite"/>
+      </circle>
+    </svg>
+  </div>
+
+  <!-- App Name -->
+  <div class="splash-title">My School Transport</div>
+  <div class="splash-sub">Manage · Track · Connect</div>
+
+  <!-- Loading dots -->
+  <div class="loading-dots">
+    <div class="dot"></div>
+    <div class="dot"></div>
+    <div class="dot"></div>
+  </div>
+  <div class="loading-text" id="loading-text">Starting up...</div>
+
+  <!-- Animated Road -->
+  <div class="road">
+    <div class="road-line"></div>
+    <div class="road-line"></div>
+    <div class="road-line"></div>
+    <div class="road-line"></div>
+    <div class="road-line"></div>
+  </div>
+</div>
 <div class="login-wrap">
   <div class="login-card">
     <div class="logo-area">
@@ -172,6 +425,40 @@ document.addEventListener('keydown',e=>{
   else if(active==='tab-admin')adminLogin();
   else superLogin();
 });
+// ── SPLASH SCREEN ──────────────────────────────────
+const loadingMessages = [
+  'Starting up...',
+  'Loading routes...',
+  'Connecting GPS...',
+  'Almost ready...'
+];
+let msgIndex = 0;
+const loadingText = document.getElementById('loading-text');
+
+const msgTimer = setInterval(() => {
+  msgIndex = (msgIndex + 1) % loadingMessages.length;
+  loadingText.textContent = loadingMessages[msgIndex];
+}, 1200);
+
+function hideSplash() {
+  clearInterval(msgTimer);
+  const splash = document.getElementById('splash');
+  splash.classList.add('hidden');
+  setTimeout(() => splash.remove(), 700);
+}
+
+// Hide splash when page is fully loaded (min 2.5s for effect)
+const splashStart = Date.now();
+window.addEventListener('load', () => {
+  const elapsed = Date.now() - splashStart;
+  const minTime = 2500;
+  const delay = Math.max(0, minTime - elapsed);
+  setTimeout(hideSplash, delay);
+});
+
+// Fallback — hide after 8s no matter what
+setTimeout(hideSplash, 8000);
+
 // ── PWA Install Prompt ──────────────────────────────
 let deferredPrompt;
 
