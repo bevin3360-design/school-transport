@@ -176,7 +176,9 @@ async function saveRoute(){
   let r;
   if(id)r=await fetch('/api/routes/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description,is_morning,active})});
   else r=await fetch('/api/routes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description,is_morning})});
-  const d=await r.json();if(d.success||d.id){closeModal('route-modal');loadRoutes();}
+  const d=await r.json();
+  if(d.success||d.id){closeModal('route-modal');loadRoutes();}
+  else{alert('Error saving route: '+(d.error||'Unknown error. Check your subscription status.'));}
 }
 async function deleteRoute(id){if(!confirm('Delete?'))return;await fetch('/api/routes/'+id,{method:'DELETE'});loadRoutes();}
 

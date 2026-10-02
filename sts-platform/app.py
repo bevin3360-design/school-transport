@@ -1,5 +1,5 @@
-﻿"""
-SCHOOL TRANSPORT SYSTEM â€” Multi-Tenant Platform v2
+"""
+SCHOOL TRANSPORT SYSTEM — Multi-Tenant Platform v2
 Owner: Super Admin controls all schools
 Payment: M-Pesa to 0753538323
 Trial: 30 days free per school
@@ -26,7 +26,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 CORS(app)
 db = SQLAlchemy(app)
 
-# â”€â”€ PAYMENT CONFIG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── PAYMENT CONFIG ──────────────────────
 MPESA_NUMBER = "0753538323"
 MPESA_NAME   = "KEVIN OGUTU"
 PLANS = {
@@ -36,9 +36,9 @@ PLANS = {
 }
 TRIAL_DAYS = 30
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 # MODELS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 
 class School(db.Model):
     id            = db.Column(db.Integer, primary_key=True)
@@ -153,7 +153,7 @@ class PlatformSettings(db.Model):
     trial_days   = db.Column(db.Integer,     default=30)
     updated_at   = db.Column(db.DateTime,    default=datetime.utcnow)
 
-# â"€â"€ GPS TRACKING MODELS â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+# �"��"� GPS TRACKING MODELS �"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"�
 class Driver(db.Model):
     id            = db.Column(db.Integer, primary_key=True)
     school_id     = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=False)
@@ -220,9 +220,9 @@ class PickupAlert(db.Model):
 
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 # HELPERS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 def log_action(school_id, user_type, user_name, action):
     db.session.add(AuditLog(
         school_id=school_id, user_type=user_type,
@@ -251,13 +251,16 @@ def get_school_or_403():
     sid = current_school_id()
     if not sid: return None, (jsonify({'error':'Unauthorised'}), 403)
     s = School.query.get(sid)
-    if not s or not s.is_active():
-        return None, (jsonify({'error':'School subscription expired or inactive'}), 403)
+    if not s:
+        return None, (jsonify({'error':'School not found'}), 404)
+    # Allow both active AND trial schools to use the app
+    if s.status == 'suspended':
+        return None, (jsonify({'error':'School account suspended. Contact support.'}), 403)
     return s, None
 
 def is_weekend(d): return d.weekday() >= 5
 
-# â”€â”€ ALLOCATION ALGORITHM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── ALLOCATION ALGORITHM ────────────────
 def generate_roster(school_id, target_date):
     if is_weekend(target_date): return []
     school = School.query.get(school_id)
@@ -315,9 +318,9 @@ def save_roster(school_id, assignments, target_date):
             is_morning=a['is_morning'], status='assigned'))
     db.session.commit()
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 # PAGES
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -356,9 +359,9 @@ def parent_panel():
     if not session.get('parent_id'): return redirect('/')
     return render_template('parent.html')
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 # AUTH APIs
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 @app.route('/api/super/login', methods=['POST'])
 def super_login():
     data = request.get_json()
@@ -378,9 +381,9 @@ def admin_login():
     admin = SchoolAdmin.query.filter_by(username=username).first()
     if admin and admin.check_password(password):
         school = School.query.get(admin.school_id)
-        if not school.is_active():
+        if school.status == 'suspended':
             return jsonify({'success': False,
-                'message': f'Subscription expired. Please renew to continue.'}), 403
+                'message': 'School account suspended. Contact support.'}), 403
         session['school_admin_id'] = admin.id
         session['school_id'] = admin.school_id
         session['school_name'] = school.name
@@ -397,8 +400,8 @@ def teacher_login():
     passcode = sanitize(data.get('passcode',''))
     school_code = sanitize(data.get('school_code',''))
     school = School.query.filter_by(code=school_code).first()
-    if not school or not school.is_active():
-        return jsonify({'success': False, 'message': 'School not found or inactive'}), 401
+    if not school or school.status == 'suspended':
+        return jsonify({'success': False, 'message': 'School not found or suspended'}), 401
     teacher = Teacher.query.filter_by(
         school_id=school.id, teaching_code=code,
         passcode=passcode, authorised=True, active=True).first()
@@ -438,9 +441,9 @@ def check_session():
                         'school_id': session.get('school_id')})
     return jsonify({'type': None})
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ����������������������������������������
 # DRIVER & PARENT AUTH + GPS TRACKING APIs
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ����������������������������������������
 
 @app.route('/api/driver/login', methods=['POST'])
 def driver_login():
@@ -450,8 +453,8 @@ def driver_login():
     school_code = sanitize(data.get('school_code',''))
     
     school = School.query.filter_by(code=school_code).first()
-    if not school or not school.is_active():
-        return jsonify({'success': False, 'message': 'School not found or inactive'}), 401
+    if not school or school.status == 'suspended':
+        return jsonify({'success': False, 'message': 'School not found or suspended'}), 401
     
     driver = Driver.query.filter_by(school_id=school.id, phone=phone, active=True).first()
     if driver and driver.check_password(password):
@@ -473,8 +476,8 @@ def parent_login():
     school_code = sanitize(data.get('school_code',''))
     
     school = School.query.filter_by(code=school_code).first()
-    if not school or not school.is_active():
-        return jsonify({'success': False, 'message': 'School not found or inactive'}), 401
+    if not school or school.status == 'suspended':
+        return jsonify({'success': False, 'message': 'School not found or suspended'}), 401
     
     parent = Parent.query.filter_by(school_id=school.id, phone=phone, active=True).first()
     if parent and parent.check_password(password):
@@ -906,9 +909,9 @@ def admin_delete_parent(pid):
     db.session.commit()
     return jsonify({'success': True})
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 # SCHOOL REGISTRATION
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 @app.route('/api/register', methods=['POST'])
 def register_school():
     data = request.get_json()
@@ -941,9 +944,9 @@ def register_school():
                     'trial_end': trial_end.isoformat(),
                     'message': f'Welcome! Your 30-day free trial starts today.'})
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 # PAYMENT APIs
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 @app.route('/api/payment/info')
 def payment_info():
     s = get_settings()
@@ -994,9 +997,9 @@ def payment_status():
         } for p in payments]
     })
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 # SUPER ADMIN APIs
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 @app.route('/api/super/schools')
 def super_schools():
     if not is_super(): return jsonify({'error':'Unauthorised'}), 403
@@ -1039,7 +1042,7 @@ def verify_payment(pid):
     school.subscription_end = current_end + timedelta(days=30)
     db.session.commit()
     log_action(None, 'super', session.get('super_name'),
-               f'Verified payment {p.mpesa_code} for {school.name} â€” activated {p.plan} until {school.subscription_end}')
+               f'Verified payment {p.mpesa_code} for {school.name} — activated {p.plan} until {school.subscription_end}')
     return jsonify({'success': True,
                     'message': f'{school.name} activated on {p.plan} plan until {school.subscription_end}'})
 
@@ -1222,9 +1225,9 @@ def super_update_settings():
                f'Updated platform settings: M-Pesa {s.mpesa_number} / {s.mpesa_name}')
     return jsonify({'success': True, 'message': 'Settings saved successfully.'})
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 # SCHOOL ADMIN APIs (scoped to school)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ════════════════════════════════════════
 @app.route('/api/school/settings', methods=['GET'])
 def school_settings():
     school, err = get_school_or_403()
@@ -1318,8 +1321,10 @@ def get_routes():
 @app.route('/api/routes', methods=['POST'])
 def add_route():
     if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
-    school, err = get_school_or_403()
-    if err: return err
+    sid = current_school_id()
+    if not sid: return jsonify({'error':'Unauthorised'}), 403
+    school = School.query.get(sid)
+    if not school: return jsonify({'error':'School not found'}), 404
     data = request.get_json()
     plan_limit = PLANS.get(school.plan,{}).get('routes', 4)
     current_count = Route.query.filter_by(school_id=school.id, active=True).count()
@@ -1422,11 +1427,11 @@ def get_logs():
                      'user_type':l.user_type,'user_name':l.user_name,
                      'action':l.action,'ip':l.ip} for l in logs])
 
-# â”€â”€ Teacher week roster (own duties only) â”€
+# ── Teacher week roster (own duties only) ─
 @app.route('/api/roster/teacher/week')
 def teacher_week_roster():
     if not session.get('teacher_id'): return jsonify({'error':'Unauthorised'}), 403
-    # Return Monâ€“Fri for the week containing 'date' param
+    # Return Mon–Fri for the week containing 'date' param
     base = date.fromisoformat(request.args.get('date', date.today().isoformat()))
     # Find Monday of that week
     monday = base - timedelta(days=base.weekday())
@@ -1446,7 +1451,7 @@ def teacher_week_roster():
         })
     return jsonify(week)
 
-# â”€â”€ Super admin: view any school's roster â”€
+# ── Super admin: view any school's roster ─
 @app.route('/api/super/school/<int:sid>/roster')
 def super_view_roster(sid):
     if not is_super(): return jsonify({'error':'Unauthorised'}), 403
@@ -1459,7 +1464,7 @@ def super_view_roster(sid):
         'status': a.status, 'duty_date': a.duty_date.isoformat()
     } for a in assignments])
 
-# â”€â”€ Super admin: view any school's teachers â”€
+# ── Super admin: view any school's teachers ─
 @app.route('/api/super/school/<int:sid>/teachers')
 def super_view_teachers(sid):
     if not is_super(): return jsonify({'error':'Unauthorised'}), 403
@@ -1467,7 +1472,7 @@ def super_view_teachers(sid):
     return jsonify([{'id': t.id, 'name': t.name, 'teaching_code': t.teaching_code,
                      'active': t.active, 'authorised': t.authorised} for t in teachers])
 
-# â”€â”€ Super admin: view any school's routes â”€
+# ── Super admin: view any school's routes ─
 @app.route('/api/super/school/<int:sid>/routes')
 def super_view_routes(sid):
     if not is_super(): return jsonify({'error':'Unauthorised'}), 403
@@ -1476,9 +1481,9 @@ def super_view_routes(sid):
                      'is_morning': r.is_morning, 'active': r.active} for r in routes])
 
 
-# ════════════════════════════════════════
+# ----------------------------------------
 # SECURITY HEADERS
-# ════════════════════════════════════════
+# ----------------------------------------
 @app.after_request
 def security_headers(response):
     response.headers['X-Frame-Options'] = 'DENY'
@@ -1486,9 +1491,9 @@ def security_headers(response):
     response.headers['X-XSS-Protection'] = '1; mode=block'
     return response
 
-# ════════════════════════════════════════
+# ----------------------------------------
 # INIT DB
-# ════════════════════════════════════════
+# ----------------------------------------
 def init_db():
     with app.app_context():
         db.create_all()
