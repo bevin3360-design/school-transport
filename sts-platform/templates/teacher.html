@@ -56,6 +56,29 @@
     <div id="link-box"></div>
   </div>
 
+  <!-- ADD PARENT -->
+  <div class="teacher-card">
+    <h2 style="margin-bottom:.5rem">➕ Register a Parent</h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem;">
+      Add a parent so they can track the bus and receive alerts
+    </p>
+    <div class="form-group"><label>Parent Name</label>
+      <input type="text" id="tap-name" placeholder="e.g. Jane Mwangi"/></div>
+    <div class="form-group"><label>Phone Number</label>
+      <input type="tel" id="tap-phone" placeholder="0712345678"/></div>
+    <div class="form-group"><label>Password</label>
+      <input type="password" id="tap-pass" placeholder="Create a login password"/></div>
+    <div class="form-group"><label>Child's Name</label>
+      <input type="text" id="tap-child" placeholder="e.g. Brian Mwangi"/></div>
+    <div class="form-group"><label>Child's Class</label>
+      <input type="text" id="tap-class" placeholder="e.g. Grade 4A"/></div>
+    <div class="form-group"><label>Route</label>
+      <select id="tap-route"><option value="">-- Select Route --</option></select></div>
+    <p id="tap-err" class="error-msg hidden"></p>
+    <p id="tap-ok" class="success-msg hidden"></p>
+    <button class="btn-primary full" onclick="teacherAddParent()">✅ Register Parent</button>
+  </div>
+
 </div>
 
 <script>
@@ -98,6 +121,7 @@ async function init() {
   loadToday();
   loadMyWeek();
   loadLink();
+  loadRoutesForTeacher();
 }
 
 // ── TODAY ────────────────────────────────
@@ -175,6 +199,63 @@ async function loadLink() {
 async function logout() {
   await fetch('/api/logout', { method: 'POST' });
   window.location.href = '/';
+}
+
+// ── TEACHER: ADD PARENT ──────────────────
+async function loadRoutesForTeacher() {
+  try {
+    const r = await fetch('/api/routes');
+    const routes = await r.json();
+    const sel = document.getElementById('tap-route');
+    routes.forEach(rt => {
+      const opt = document.createElement('option');
+      opt.value = rt.id;
+      opt.textContent = `${rt.name} (${rt.is_morning ? 'Morning' : 'Evening'})`;
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
+}
+
+async function teacherAddParent() {
+  const name     = document.getElementById('tap-name').value.trim();
+  const phone    = document.getElementById('tap-phone').value.trim();
+  const password = document.getElementById('tap-pass').value;
+  const child    = document.getElementById('tap-child').value.trim();
+  const cls      = document.getElementById('tap-class').value.trim();
+  const route_id = document.getElementById('tap-route').value || null;
+  const errEl    = document.getElementById('tap-err');
+  const okEl     = document.getElementById('tap-ok');
+
+  errEl.classList.add('hidden');
+  okEl.classList.add('hidden');
+
+  if (!name || !phone || !password) {
+    errEl.textContent = 'Name, phone and password are required';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/teacher/add-parent', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name, phone, password, child_name: child, child_class: cls, route_id})
+    });
+    const d = await r.json();
+    if (r.ok) {
+      okEl.textContent = `✓ ${d.message}`;
+      okEl.classList.remove('hidden');
+      ['tap-name','tap-phone','tap-pass','tap-child','tap-class']
+        .forEach(id => document.getElementById(id).value = '');
+      document.getElementById('tap-route').selectedIndex = 0;
+    } else {
+      errEl.textContent = d.error || 'Failed to register parent';
+      errEl.classList.remove('hidden');
+    }
+  } catch(err) {
+    errEl.textContent = 'Network error. Try again.';
+    errEl.classList.remove('hidden');
+  }
 }
 
 init();

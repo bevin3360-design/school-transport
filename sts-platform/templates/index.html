@@ -316,6 +316,38 @@
         <input type="password" id="p-pass" placeholder="Your password"/></div>
       <button class="btn-primary full" onclick="parentLogin()">Sign In</button>
       <p id="p-err" class="error-msg hidden"></p>
+      <hr style="margin:1rem 0;border:none;border-top:1px solid var(--grey)"/>
+      <p style="text-align:center;font-size:.85rem;color:var(--muted);">
+        New parent? 
+        <a href="#" onclick="switchTab('parent-reg', document.querySelector('.tab-btn[data-tab=parent-reg]'))" 
+           style="color:var(--sky);font-weight:600;">Register here →</a>
+      </p>
+    </div>
+
+    <!-- PARENT REGISTRATION -->
+    <div id="tab-parent-reg" class="tab-content">
+      <p style="font-size:.85rem;background:var(--sky-light);padding:.8rem;border-radius:8px;margin-bottom:1rem;">
+        Register yourself as a parent. Ask your school admin for the School Code.
+      </p>
+      <div class="form-group"><label>School Code</label>
+        <input type="text" id="pr-school" placeholder="e.g. FSL001" autocomplete="off"/></div>
+      <div class="form-group"><label>Your Name</label>
+        <input type="text" id="pr-name" placeholder="Full name"/></div>
+      <div class="form-group"><label>Phone Number</label>
+        <input type="tel" id="pr-phone" placeholder="0712345678"/></div>
+      <div class="form-group"><label>Password</label>
+        <input type="password" id="pr-pass" placeholder="Create a password"/></div>
+      <div class="form-group"><label>Child's Name</label>
+        <input type="text" id="pr-child" placeholder="e.g. Brian Mwangi"/></div>
+      <div class="form-group"><label>Child's Class</label>
+        <input type="text" id="pr-class" placeholder="e.g. Grade 4A"/></div>
+      <button class="btn-primary full" onclick="parentSelfRegister()">Register</button>
+      <p id="pr-err" class="error-msg hidden"></p>
+      <p id="pr-ok" class="success-msg hidden"></p>
+      <p style="text-align:center;font-size:.85rem;margin-top:.8rem;">
+        Already registered? 
+        <a href="#" onclick="switchTabByName('parent')" style="color:var(--sky);font-weight:600;">Login →</a>
+      </p>
     </div>
 
     <!-- ADMIN -->
@@ -415,6 +447,47 @@ async function parentLogin() {
   const d=await r.json();
   if(d.success) window.location.href='/parent';
   else{err.textContent=d.message||'Login failed';err.classList.remove('hidden');}
+}
+
+function switchTabByName(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+async function parentSelfRegister() {
+  const school_code = document.getElementById('pr-school').value.trim();
+  const name        = document.getElementById('pr-name').value.trim();
+  const phone       = document.getElementById('pr-phone').value.trim();
+  const password    = document.getElementById('pr-pass').value;
+  const child_name  = document.getElementById('pr-child').value.trim();
+  const child_class = document.getElementById('pr-class').value.trim();
+  const errEl = document.getElementById('pr-err');
+  const okEl  = document.getElementById('pr-ok');
+  errEl.classList.add('hidden');
+  okEl.classList.add('hidden');
+
+  if (!school_code || !name || !phone || !password) {
+    errEl.textContent = 'School code, name, phone and password are required';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const r = await fetch('/api/parent/register', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({school_code, name, phone, password, child_name, child_class})
+  });
+  const d = await r.json();
+  if (r.ok) {
+    okEl.textContent = '✓ ' + d.message;
+    okEl.classList.remove('hidden');
+    // Auto-switch to login after 2s
+    setTimeout(() => switchTabByName('parent'), 2000);
+  } else {
+    errEl.textContent = d.error || 'Registration failed';
+    errEl.classList.remove('hidden');
+  }
 }
 document.addEventListener('keydown',e=>{
   if(e.key!=='Enter')return;

@@ -919,6 +919,105 @@ def admin_delete_parent(pid):
     db.session.commit()
     return jsonify({'success': True})
 
+# ── Driver: add parent to their route ──────────────────────────────
+@app.route('/api/driver/add-parent', methods=['POST'])
+def driver_add_parent():
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    driver = Driver.query.get(session['driver_id'])
+    data = request.get_json()
+    name       = sanitize(data.get('name', ''))
+    phone      = sanitize(data.get('phone', ''))
+    password   = data.get('password', '')
+    child_name = sanitize(data.get('child_name', ''))
+    child_class= sanitize(data.get('child_class', ''))
+
+    if not all([name, phone, password]):
+        return jsonify({'error': 'Name, phone and password are required'}), 400
+    if Parent.query.filter_by(phone=phone).first():
+        return jsonify({'error': 'Phone number already registered'}), 400
+
+    parent = Parent(
+        school_id=driver.school_id,
+        name=name, phone=phone,
+        child_name=child_name, child_class=child_class,
+        assigned_route_id=driver.assigned_route_id
+    )
+    parent.set_password(password)
+    db.session.add(parent)
+    db.session.commit()
+    log_action(driver.school_id, 'driver', session['driver_name'],
+               f'Added parent {name} ({phone}) to route')
+    return jsonify({'success': True, 'parent_id': parent.id,
+                    'message': f'Parent {name} added successfully'})
+
+# ── Teacher: add parent to their assigned route ─────────────────────
+@app.route('/api/teacher/add-parent', methods=['POST'])
+def teacher_add_parent():
+    if not session.get('teacher_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    teacher = Teacher.query.get(session['teacher_id'])
+    data = request.get_json()
+    name       = sanitize(data.get('name', ''))
+    phone      = sanitize(data.get('phone', ''))
+    password   = data.get('password', '')
+    child_name = sanitize(data.get('child_name', ''))
+    child_class= sanitize(data.get('child_class', ''))
+    route_id   = data.get('route_id')
+
+    if not all([name, phone, password]):
+        return jsonify({'error': 'Name, phone and password are required'}), 400
+    if Parent.query.filter_by(phone=phone).first():
+        return jsonify({'error': 'Phone number already registered'}), 400
+
+    parent = Parent(
+        school_id=teacher.school_id,
+        name=name, phone=phone,
+        child_name=child_name, child_class=child_class,
+        assigned_route_id=route_id if route_id else None
+    )
+    parent.set_password(password)
+    db.session.add(parent)
+    db.session.commit()
+    log_action(teacher.school_id, 'teacher', session['teacher_name'],
+               f'Added parent {name} ({phone})')
+    return jsonify({'success': True, 'parent_id': parent.id,
+                    'message': f'Parent {name} added successfully'})
+
+# ── Parent self-registration via school code ────────────────────────
+@app.route('/api/parent/register', methods=['POST'])
+def parent_register():
+    data = request.get_json()
+    school_code = sanitize(data.get('school_code', '').upper())
+    name        = sanitize(data.get('name', ''))
+    phone       = sanitize(data.get('phone', ''))
+    password    = data.get('password', '')
+    child_name  = sanitize(data.get('child_name', ''))
+    child_class = sanitize(data.get('child_class', ''))
+
+    if not all([school_code, name, phone, password]):
+        return jsonify({'error': 'All fields required'}), 400
+
+    school = School.query.filter_by(code=school_code).first()
+    if not school:
+        return jsonify({'error': 'School code not found'}), 404
+
+    if Parent.query.filter_by(phone=phone).first():
+        return jsonify({'error': 'Phone number already registered'}), 400
+
+    parent = Parent(
+        school_id=school.id,
+        name=name, phone=phone,
+        child_name=child_name, child_class=child_class
+    )
+    parent.set_password(password)
+    db.session.add(parent)
+    db.session.commit()
+    log_action(school.id, 'system', 'self-register',
+               f'Parent {name} self-registered')
+    return jsonify({'success': True,
+                    'message': 'Registered! Ask your school admin to assign your route.'})
+
 # ════════════════════════════════════════
 # SCHOOL REGISTRATION
 # ════════════════════════════════════════

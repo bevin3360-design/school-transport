@@ -60,6 +60,27 @@
     <h2>👨‍👩‍👧 Parents on Your Route</h2>
     <div id="parents-list" style="margin-top:1rem;"></div>
   </div>
+
+  <!-- Add Parent -->
+  <div class="card">
+    <h2>➕ Add Parent to Your Route</h2>
+    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1rem;">
+      Register a parent so they can track your bus and receive alerts
+    </p>
+    <div class="form-group"><label>Parent Name</label>
+      <input type="text" id="ap-name" placeholder="e.g. Jane Mwangi"/></div>
+    <div class="form-group"><label>Phone Number</label>
+      <input type="tel" id="ap-phone" placeholder="0712345678"/></div>
+    <div class="form-group"><label>Password (for parent login)</label>
+      <input type="password" id="ap-password" placeholder="Create a password"/></div>
+    <div class="form-group"><label>Child's Name</label>
+      <input type="text" id="ap-child" placeholder="e.g. Brian Mwangi"/></div>
+    <div class="form-group"><label>Child's Class</label>
+      <input type="text" id="ap-class" placeholder="e.g. Grade 4A"/></div>
+    <p id="ap-err" class="error-msg hidden"></p>
+    <p id="ap-ok" class="success-msg hidden"></p>
+    <button class="btn-primary full" onclick="driverAddParent()">✅ Add Parent</button>
+  </div>
 </div>
 
 <script>
@@ -369,6 +390,49 @@ async function logout() {
     if (isTracking) await stopTracking();
     await fetch('/api/logout', {method:'POST'});
     window.location.href = '/';
+  }
+}
+
+async function driverAddParent() {
+  const name     = document.getElementById('ap-name').value.trim();
+  const phone    = document.getElementById('ap-phone').value.trim();
+  const password = document.getElementById('ap-password').value;
+  const child    = document.getElementById('ap-child').value.trim();
+  const cls      = document.getElementById('ap-class').value.trim();
+  const errEl    = document.getElementById('ap-err');
+  const okEl     = document.getElementById('ap-ok');
+
+  errEl.classList.add('hidden');
+  okEl.classList.add('hidden');
+
+  if (!name || !phone || !password) {
+    errEl.textContent = 'Name, phone and password are required';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/driver/add-parent', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name, phone, password, child_name: child, child_class: cls})
+    });
+    const d = await r.json();
+    if (r.ok) {
+      okEl.textContent = `✓ ${d.message}`;
+      okEl.classList.remove('hidden');
+      // Clear form
+      ['ap-name','ap-phone','ap-password','ap-child','ap-class']
+        .forEach(id => document.getElementById(id).value = '');
+      // Reload parent list
+      await loadRouteInfo();
+    } else {
+      errEl.textContent = d.error || 'Failed to add parent';
+      errEl.classList.remove('hidden');
+    }
+  } catch (err) {
+    errEl.textContent = 'Network error. Try again.';
+    errEl.classList.remove('hidden');
   }
 }
 
