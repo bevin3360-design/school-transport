@@ -1,533 +1,692 @@
-// ─────────────────────────────────────────
-// SCHOOL TRANSPORT SYSTEM – Admin JS
-// ─────────────────────────────────────────
-
 const today = new Date().toISOString().split('T')[0];
 document.getElementById('roster-date').value = today;
 
-// ── SECTION NAVIGATION ──
-function showSection(name) {
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-  document.getElementById('section-' + name).classList.add('active');
-  event.currentTarget.classList.add('active');
+function showSection(name,el){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
+  document.getElementById('section-'+name).classList.add('active');
+  if(el)el.classList.add('active');
+  if(name==='roster'){loadRoster();loadWeek();}
+  if(name==='teachers')loadTeachers();
+  if(name==='routes')loadRoutes();
+  if(name==='tracking')loadTrackingSection();
+  if(name==='drivers')loadDrivers();
+  if(name==='parents')loadParents();
+  if(name==='logs')loadLogs();
+  if(name==='settings')loadSettings();
+}
+function openModal(id){document.getElementById(id).classList.remove('hidden');}
+function closeModal(id){document.getElementById(id).classList.add('hidden');}
 
-  if (name === 'roster') { loadRoster(); loadWeekGrid(); }
-  if (name === 'teachers') loadTeachers();
-  if (name === 'routes') loadRoutes();
-  if (name === 'logs') loadLogs();
-  if (name === 'admins') loadAdmins();
-  if (name === 'settings') loadSettings();
+async function init(){
+  const r=await fetch('/api/session');const d=await r.json();
+  if(d.type!=='admin'){window.location.href='/';return;}
+  document.getElementById('nav-user').textContent=d.school;
+  document.getElementById('nav-role').textContent=d.role;
+  document.getElementById('nav-school').textContent=d.school+' – Transport System';
+  loadSubBanner();loadRoster();loadWeek();
 }
 
-// ── MODALS ──
-function openModal(id) {
-  document.getElementById(id).classList.remove('hidden');
-}
-function closeModal(id) {
-  document.getElementById(id).classList.add('hidden');
+async function loadSubBanner(){
+  const r=await fetch('/api/payment/status');const d=await r.json();
+  const el=document.getElementById('sub-banner');
+  if(d.days_remaining<=7&&d.school_status!=='expired'){
+    el.innerHTML=`<div class="sub-banner trial">⚠️ Subscription: <strong>${d.days_remaining} days remaining</strong> on <strong>${d.plan}</strong> plan.
+      <a href="/payment" style="color:var(--red);font-weight:700">Renew Now →</a></div>`;}
+  else if(d.school_status==='expired'){
+    el.innerHTML=`<div class="sub-banner expired">🔴 Subscription EXPIRED. <a href="/payment" style="color:var(--red);font-weight:700">Renew to continue →</a></div>`;}
 }
 
-// ── SESSION & INIT ──
-async function initPage() {
-  const r = await fetch('/api/session');
-  const d = await r.json();
-  if (d.type !== 'admin') { window.location.href = '/'; return; }
-  document.getElementById('nav-user').textContent = d.name;
-  document.getElementById('nav-role').textContent = d.role;
-  loadSettings();
+async function loadRoster(){
+  const dv=document.getElementById('roster-date').value||today;
+  const r=await fetch('/api/roster?date='+dv);const data=await r.json();
+  const msg=document.getElementById('roster-msg');const wrap=document.getElementById('roster-table-wrap');
+  msg.classList.add('hidden');wrap.style.display='block';
+  const d=new Date(dv+'T12:00:00');if(d.getDay()===0||d.getDay()===6){
+    msg.textContent='🎉 Weekend — No roster needed.';msg.classList.remove('hidden');wrap.style.display='none';return;}
+  if(!data.length){msg.textContent='No roster for this date. Click Generate to create one.';msg.classList.remove('hidden');wrap.style.display='none';return;}
+  document.getElementById('roster-body').innerHTML=data.map((a,i)=>`<tr>
+    <td>${i+1}</td><td><strong>${a.teacher_name}</strong></td><td><code>${a.teaching_code}</code></td>
+    <td>${a.route_name}</td><td>${a.is_morning?'🌅 Morning':'🌆 Evening'}</td>
+    <td><span class="status-${a.status}">${a.status.toUpperCase()}</span></td>
+    <td>${a.status!=='absent'?`<button class="btn-sm btn-warn" onclick="markAbsent(${a.id})">Absent</button>`:
+      `<button class="btn-sm btn-edit" onclick="loadReplace(${a.id})">Replace</button>`}</td>
+  </tr>`).join('');
+}
+
+async function generateRoster(){
+  const dv=document.getElementById('roster-date').value||today;
+  const r=await fetch('/api/roster/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:dv})});
+  const d=await r.json();
+  if(d.error)alert(d.error);else{loadRoster();loadWeek();}
+}
+
+async function loadWeek(){
+  const d=new Date();const day=d.getDay();const diff=d.getDate()-day+(day===0?-6:1);
+  const mon=new Date(d.setDate(diff));const start=mon.toISOString().split('T')[0];
+  // Build week from Monday
+  const grid=document.getElementById('week-grid');grid.innerHTML='';
+  for(let i=0;i<5;i++){
+    const dd=new Date(mon);dd.setDate(mon.getDate()+i);
+    const ds=dd.toISOString().split('T')[0];
+    const r=await fetch('/api/roster?date='+ds);const data=await r.json();
+    const card=document.createElement('div');card.className='week-card';
+    card.innerHTML=`<div class="week-card-header">${dd.toLocaleDateString('en',{weekday:'short',month:'short',day:'numeric'})}</div>
+      <div class="week-card-body">${data.length?data.map(a=>`<div class="week-assign"><strong>${a.teacher_name}</strong><br/><small>${a.route_name}</small></div>`).join(''):
+      '<p style="color:var(--muted);font-size:.82rem">No roster</p>'}</div>`;
+    grid.appendChild(card);
+  }
+}
+
+async function markAbsent(id){
+  if(!confirm('Mark as absent?'))return;
+  const r=await fetch(`/api/roster/${id}/absent`,{method:'POST'});const d=await r.json();
   loadRoster();
-  loadWeekGrid();
+  if(d.suggestions&&d.suggestions.length){showReplace(id,d.suggestions);}
+  else alert('Marked absent. No replacements available.');
 }
-
-async function logout() {
-  await fetch('/api/logout', { method: 'POST' });
-  window.location.href = '/';
+async function loadReplace(id){
+  const r=await fetch(`/api/roster/${id}/absent`,{method:'POST'});const d=await r.json();
+  if(d.suggestions)showReplace(id,d.suggestions);
 }
-
-// ── SETTINGS ──
-async function loadSettings() {
-  const r = await fetch('/api/settings');
-  const d = await r.json();
-  document.getElementById('nav-school-name').textContent = d.school_name + ' – Transport System';
-  document.title = d.school_name + ' Admin';
-  const sn = document.getElementById('setting-school-name');
-  const sm = document.getElementById('setting-morning');
-  const se = document.getElementById('setting-evening');
-  const sl = document.getElementById('setting-public-link');
-  const sll = document.getElementById('setting-link-label');
-  if (sn) sn.value = d.school_name;
-  if (sm) { sm.checked = d.morning_route_active; updateRouteCardStyle('morning'); }
-  if (se) { se.checked = d.evening_route_active; updateRouteCardStyle('evening'); }
-  if (sl) sl.value = d.public_link || '';
-  if (sll) sll.value = d.link_label || 'Weekly School Transport Link';
-  updateShareCard(d);
-}
-
-function updateRouteCardStyle(type) {
-  const cb = document.getElementById('setting-' + type);
-  const card = document.getElementById(type + '-card');
-  const status = document.getElementById(type + '-status');
-  if (!cb || !card || !status) return;
-  if (cb.checked) {
-    card.classList.add('active-card');
-    status.textContent = '● ACTIVE';
-    status.className = 'ra-status status-active';
-  } else {
-    card.classList.remove('active-card');
-    status.textContent = '● DORMANT';
-    status.className = 'ra-status status-inactive';
-  }
-}
-
-function updateShareCard(d) {
-  const card = document.getElementById('share-card');
-  const link = d.public_link || document.getElementById('setting-public-link')?.value;
-  if (!card) return;
-  if (link) {
-    card.classList.remove('hidden');
-    document.getElementById('share-label-preview').textContent =
-      d.link_label || document.getElementById('setting-link-label')?.value || 'Weekly School Transport Link';
-    document.getElementById('share-school-preview').textContent =
-      (d.school_name || document.getElementById('setting-school-name')?.value || 'School') + ' – Transport System';
-    const linkEl = document.getElementById('share-link-preview');
-    linkEl.textContent = link;
-    linkEl.href = link;
-  } else {
-    card.classList.add('hidden');
-  }
-}
-
-async function saveSettings() {
-  const school_name = document.getElementById('setting-school-name').value.trim();
-  const morning_route_active = document.getElementById('setting-morning').checked;
-  const evening_route_active = document.getElementById('setting-evening').checked;
-  const public_link = document.getElementById('setting-public-link').value.trim();
-  const link_label = document.getElementById('setting-link-label').value.trim();
-
-  if (!school_name) { alert('School name cannot be empty.'); return; }
-
-  const r = await fetch('/api/settings', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ school_name, morning_route_active, evening_route_active, public_link, link_label })
-  });
-  const d = await r.json();
-  const msg = document.getElementById('settings-msg');
-  if (d.success) {
-    msg.classList.remove('hidden');
-    document.getElementById('nav-school-name').textContent = school_name + ' – Transport System';
-    updateShareCard({ school_name, public_link, link_label });
-    setTimeout(() => msg.classList.add('hidden'), 3000);
-  } else {
-    alert('Error saving settings. Please try again.');
-  }
-}
-
-function copyLink() {
-  const link = document.getElementById('setting-public-link').value.trim();
-  if (!link) { alert('No link saved yet.'); return; }
-  navigator.clipboard.writeText(link).then(() => alert('Link copied to clipboard!'));
-}
-
-function shareLink() {
-  const link = document.getElementById('share-link-preview').textContent;
-  const label = document.getElementById('share-label-preview').textContent;
-  const school = document.getElementById('share-school-preview').textContent;
-  const text = label + '\n' + school + '\n' + link;
-  if (navigator.share) {
-    navigator.share({ title: label, text: text, url: link });
-  } else {
-    navigator.clipboard.writeText(text).then(() => alert('Link copied! Paste it in WhatsApp or SMS.'));
-  }
-}
-
-// ── ROSTER ──
-async function loadRoster() {
-  const dateVal = document.getElementById('roster-date').value || today;
-  const r = await fetch('/api/roster?date=' + dateVal);
-  const data = await r.json();
-
-  const tbody = document.getElementById('roster-body');
-  const tableWrap = document.getElementById('roster-table-wrap');
-  const emptyMsg = document.getElementById('roster-empty-msg');
-  const wkMsg = document.getElementById('roster-weekend-msg');
-
-  wkMsg.classList.add('hidden');
-  emptyMsg.classList.add('hidden');
-  tableWrap.style.display = 'block';
-
-  const d = new Date(dateVal + 'T12:00:00');
-  const dow = d.getDay();
-  if (dow === 0 || dow === 6) {
-    wkMsg.classList.remove('hidden');
-    tableWrap.style.display = 'none';
-    tbody.innerHTML = '';
-    return;
-  }
-
-  if (!data.length) {
-    emptyMsg.classList.remove('hidden');
-    tableWrap.style.display = 'none';
-    tbody.innerHTML = '';
-    return;
-  }
-
-  tbody.innerHTML = data.map((a, i) => `
-    <tr>
-      <td>${i + 1}</td>
-      <td><strong>${a.teacher_name}</strong></td>
-      <td><code>${a.teaching_code}</code></td>
-      <td>${a.route_name}</td>
-      <td>${a.is_morning ? '🌅 Morning' : '🚌 Afternoon'}</td>
-      <td><span class="status-${a.status}">${a.status.toUpperCase()}</span></td>
-      <td>
-        ${a.status !== 'absent' ? `<button class="btn-sm btn-absent" onclick="markAbsent(${a.id})">Mark Absent</button>` : `<button class="btn-sm btn-edit" onclick="loadReplacements(${a.id})">Replace</button>`}
-      </td>
-    </tr>
-  `).join('');
-}
-
-async function generateRoster() {
-  const dateVal = document.getElementById('roster-date').value || today;
-  const r = await fetch('/api/roster/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ date: dateVal })
-  });
-  const d = await r.json();
-  if (d.error) {
-    alert(d.error);
-  } else {
-    loadRoster();
-    loadWeekGrid();
-  }
-}
-
-async function loadWeekGrid() {
-  // Find Monday of current week
-  const d = new Date();
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  const monday = new Date(d.setDate(diff));
-  const start = monday.toISOString().split('T')[0];
-
-  const r = await fetch('/api/roster/week?start=' + start);
-  const days = await r.json();
-  const grid = document.getElementById('week-grid');
-  if (!days.length) { grid.innerHTML = '<p class="muted">No data yet for this week.</p>'; return; }
-
-  grid.innerHTML = days.map(day => `
-    <div class="week-day-card">
-      <div class="week-day-header">${day.day} <small style="font-weight:400;opacity:0.7">${day.date}</small></div>
-      <div class="week-day-body">
-        ${day.assignments.length
-          ? day.assignments.map(a => `
-              <div class="week-assignment ${a.is_morning ? 'morning' : ''}">
-                <strong>${a.teacher_name}</strong><br/>
-                <small>${a.route_name}</small>
-              </div>`).join('')
-          : '<p class="muted" style="font-size:0.8rem">No roster generated</p>'}
-      </div>
-    </div>
-  `).join('');
-}
-
-async function markAbsent(assignmentId) {
-  if (!confirm('Mark this teacher as absent?')) return;
-  const r = await fetch('/api/roster/' + assignmentId + '/absent', { method: 'POST' });
-  const d = await r.json();
-  if (d.success) {
-    loadRoster();
-    if (d.suggestions && d.suggestions.length) {
-      showReplacements(assignmentId, d.suggestions);
-    } else {
-      alert('Marked absent. No replacement suggestions available.');
-    }
-  }
-}
-
-async function loadReplacements(assignmentId) {
-  const r = await fetch('/api/roster/' + assignmentId + '/absent', { method: 'POST' });
-  const d = await r.json();
-  if (d.suggestions) showReplacements(assignmentId, d.suggestions);
-}
-
-function showReplacements(assignmentId, suggestions) {
-  document.getElementById('replace-assignment-id').value = assignmentId;
-  const list = document.getElementById('replace-list');
-  if (!suggestions.length) {
-    list.innerHTML = '<p class="muted">No available replacements.</p>';
-  } else {
-    list.innerHTML = suggestions.map(s => `
-      <div class="replace-item">
-        <span>${s.name} <small style="color:#7F8C8D">(${s.teaching_code})</small></span>
-        <button class="btn-sm btn-edit" onclick="confirmReplace(${assignmentId}, ${s.id})">Assign</button>
-      </div>
-    `).join('');
-  }
+function showReplace(id,suggestions){
+  document.getElementById('replace-aid').value=id;
+  document.getElementById('replace-list').innerHTML=suggestions.map(s=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:.7rem 1rem;background:var(--sky-light);border-radius:var(--r);border:1.5px solid var(--sky)">
+      <span style="font-weight:600">${s.name} <small style="color:var(--muted)">(${s.teaching_code})</small></span>
+      <button class="btn-sm btn-edit" onclick="confirmReplace(${id},${s.id})">Assign</button>
+    </div>`).join('');
   openModal('replace-modal');
 }
-
-async function confirmReplace(assignmentId, teacherId) {
-  const r = await fetch('/api/roster/' + assignmentId + '/replace', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ teacher_id: teacherId })
-  });
-  const d = await r.json();
-  if (d.success) {
-    closeModal('replace-modal');
-    loadRoster();
-  }
+async function confirmReplace(aid,tid){
+  const r=await fetch(`/api/roster/${aid}/replace`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({teacher_id:tid})});
+  const d=await r.json();if(d.success){closeModal('replace-modal');loadRoster();}
 }
 
-// ── TEACHERS ──
-async function loadTeachers() {
-  const r = await fetch('/api/teachers');
-  const data = await r.json();
-  document.getElementById('teachers-body').innerHTML = data.map(t => `
-    <tr>
-      <td><strong>${t.name}</strong></td>
-      <td><code>${t.teaching_code}</code></td>
-      <td>••••</td>
-      <td>${t.authorised
-        ? '<span style="color:var(--success)">✔ Yes</span>'
-        : '<span style="color:var(--red)">✘ No</span>'}</td>
-      <td>${t.active
-        ? '<span style="color:var(--success)">Active</span>'
-        : '<span style="color:var(--text-light)">Inactive</span>'}</td>
-      <td style="display:flex;gap:0.4rem;flex-wrap:wrap">
-        <button class="btn-sm btn-edit" onclick='editTeacher(${JSON.stringify(t)})'>Edit</button>
-        <button class="btn-sm btn-del" onclick="deleteTeacher(${t.id})">Delete</button>
-      </td>
-    </tr>
-  `).join('');
+async function loadTeachers(){
+  const r=await fetch('/api/teachers');const data=await r.json();
+  document.getElementById('teachers-body').innerHTML=data.map(t=>`<tr>
+    <td><strong>${t.name}</strong></td><td><code>${t.teaching_code}</code></td>
+    <td>${t.authorised?'<span style="color:var(--success)">✔</span>':'<span style="color:var(--red)">✘</span>'}</td>
+    <td>${t.active?'<span style="color:var(--success)">Active</span>':'<span style="color:var(--muted)">Inactive</span>'}</td>
+    <td style="display:flex;gap:.3rem">
+      <button class="btn-sm btn-edit" onclick='editTeacher(${JSON.stringify(t)})'>Edit</button>
+      <button class="btn-sm btn-del" onclick="deleteTeacher(${t.id})">Delete</button>
+    </td></tr>`).join('');
 }
-
-function openAddTeacher() {
-  document.getElementById('teacher-modal-title').textContent = 'Add Teacher';
-  document.getElementById('edit-teacher-id').value = '';
-  document.getElementById('t-name').value = '';
-  document.getElementById('t-tcode').value = '';
-  document.getElementById('t-pcode').value = '';
-  document.getElementById('t-auth').checked = false;
-  document.getElementById('t-active').checked = true;
-  openModal('teacher-modal');
-}
-
-function editTeacher(t) {
-  document.getElementById('teacher-modal-title').textContent = 'Edit Teacher';
-  document.getElementById('edit-teacher-id').value = t.id;
-  document.getElementById('t-name').value = t.name;
-  document.getElementById('t-tcode').value = t.teaching_code;
-  document.getElementById('t-pcode').value = '';
-  document.getElementById('t-auth').checked = t.authorised;
-  document.getElementById('t-active').checked = t.active;
-  openModal('teacher-modal');
-}
-
-async function saveTeacher() {
-  const id = document.getElementById('edit-teacher-id').value;
-  const name = document.getElementById('t-name').value.trim();
-  const teaching_code = document.getElementById('t-tcode').value.trim();
-  const passcode = document.getElementById('t-pcode').value.trim();
-  const authorised = document.getElementById('t-auth').checked;
-  const active = document.getElementById('t-active').checked;
-  const err = document.getElementById('teacher-modal-err');
-  err.classList.add('hidden');
-
-  if (!name) { err.textContent = 'Name is required.'; err.classList.remove('hidden'); return; }
-  if (!teaching_code) { err.textContent = 'Teaching code is required.'; err.classList.remove('hidden'); return; }
-
-  let r, body;
-  if (id) {
-    body = { name, teaching_code, authorised, active };
-    if (passcode) body.passcode = passcode;
-    r = await fetch('/api/teachers/' + id, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-  } else {
-    if (!passcode) {
-      err.textContent = 'Passcode is required for new teachers.';
-      err.classList.remove('hidden');
-      return;
-    }
-    r = await fetch('/api/teachers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, teaching_code, passcode, authorised, active })
-    });
-  }
-
-  const d = await r.json();
-  if (d.success || d.id) {
-    closeModal('teacher-modal');
-    loadTeachers();
-  } else {
-    err.textContent = d.error || 'Error saving teacher. Please try again.';
-    err.classList.remove('hidden');
-  }
-}
-
-async function deleteTeacher(id) {
-  if (!confirm('Delete this teacher?')) return;
-  await fetch('/api/teachers/' + id, { method: 'DELETE' });
-  loadTeachers();
-}
-
-// ── ROUTES ──
-async function loadRoutes() {
-  const r = await fetch('/api/routes');
-  const data = await r.json();
-  document.getElementById('routes-body').innerHTML = data.map(rt => `
-    <tr>
-      <td><strong>${rt.name}</strong></td>
-      <td>${rt.description || '—'}</td>
-      <td>${rt.is_morning ? '🌅 Yes' : '—'}</td>
-      <td>${rt.active
-        ? '<span style="color:var(--success)">Active</span>'
-        : '<span style="color:var(--text-light)">Inactive</span>'}</td>
-      <td style="display:flex;gap:0.4rem">
-        <button class="btn-sm btn-edit" onclick='editRoute(${JSON.stringify(rt)})'>Edit</button>
-        <button class="btn-sm btn-del" onclick="deleteRoute(${rt.id})">Delete</button>
-      </td>
-    </tr>
-  `).join('');
-}
-
-function editRoute(rt) {
-  document.getElementById('route-modal-title').textContent = 'Edit Route';
-  document.getElementById('edit-route-id').value = rt.id;
-  document.getElementById('r-name').value = rt.name;
-  document.getElementById('r-desc').value = rt.description || '';
-  document.getElementById('r-morning').checked = rt.is_morning;
-  document.getElementById('r-active').checked = rt.active;
-  openModal('route-modal');
-}
-
-async function saveRoute() {
-  const id = document.getElementById('edit-route-id').value;
-  const name = document.getElementById('r-name').value.trim();
-  const description = document.getElementById('r-desc').value.trim();
-  const is_morning = document.getElementById('r-morning').checked;
-  const active = document.getElementById('r-active').checked;
-
-  if (!name) { alert('Route name required.'); return; }
-
+function openAddTeacher(){
+  document.getElementById('t-modal-title').textContent='Add Teacher';
+  document.getElementById('t-id').value='';['t-name','t-code','t-passcode'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('t-auth').checked=false;document.getElementById('t-active').checked=true;
+  openModal('teacher-modal');}
+function editTeacher(t){
+  document.getElementById('t-modal-title').textContent='Edit Teacher';
+  document.getElementById('t-id').value=t.id;document.getElementById('t-name').value=t.name;
+  document.getElementById('t-code').value=t.teaching_code;document.getElementById('t-passcode').value='';
+  document.getElementById('t-auth').checked=t.authorised;document.getElementById('t-active').checked=t.active;
+  openModal('teacher-modal');}
+async function saveTeacher(){
+  const id=document.getElementById('t-id').value;
+  const name=document.getElementById('t-name').value.trim();
+  const teaching_code=document.getElementById('t-code').value.trim();
+  const passcode=document.getElementById('t-passcode').value.trim();
+  const authorised=document.getElementById('t-auth').checked;
+  const active=document.getElementById('t-active').checked;
+  const err=document.getElementById('t-err');err.classList.add('hidden');
+  if(!name||!teaching_code){err.textContent='Name and code required.';err.classList.remove('hidden');return;}
   let r;
-  if (id) {
-    r = await fetch('/api/routes/' + id, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, is_morning, active })
+  if(id){const body={name,teaching_code,authorised,active};if(passcode)body.passcode=passcode;
+    r=await fetch('/api/teachers/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}
+  else{if(!passcode){err.textContent='Passcode required.';err.classList.remove('hidden');return;}
+    r=await fetch('/api/teachers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,teaching_code,passcode,authorised,active})});}
+  const d=await r.json();
+  if(d.success||d.id){closeModal('teacher-modal');loadTeachers();}
+  else{err.textContent=d.error||'Error saving.';err.classList.remove('hidden');}
+}
+async function deleteTeacher(id){if(!confirm('Delete?'))return;await fetch('/api/teachers/'+id,{method:'DELETE'});loadTeachers();}
+
+async function loadRoutes(){
+  const r=await fetch('/api/routes');const data=await r.json();
+  document.getElementById('routes-body').innerHTML=data.map(rt=>`<tr>
+    <td><strong>${rt.name}</strong></td><td>${rt.description||'—'}</td>
+    <td>${rt.is_morning?'🌅 Yes':'—'}</td>
+    <td>${rt.active?'<span style="color:var(--success)">Active</span>':'<span style="color:var(--muted)">Inactive</span>'}</td>
+    <td style="display:flex;gap:.3rem">
+      <button class="btn-sm btn-edit" onclick='editRoute(${JSON.stringify(rt)})'>Edit</button>
+      <button class="btn-sm btn-del" onclick="deleteRoute(${rt.id})">Delete</button>
+    </td></tr>`).join('');
+}
+function openAddRoute(){
+  document.getElementById('r-modal-title').textContent='Add Route';
+  document.getElementById('r-id').value='';['r-name','r-desc'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('r-morning').checked=false;document.getElementById('r-active').checked=true;
+  openModal('route-modal');}
+function editRoute(rt){
+  document.getElementById('r-modal-title').textContent='Edit Route';
+  document.getElementById('r-id').value=rt.id;document.getElementById('r-name').value=rt.name;
+  document.getElementById('r-desc').value=rt.description||'';
+  document.getElementById('r-morning').checked=rt.is_morning;document.getElementById('r-active').checked=rt.active;
+  openModal('route-modal');}
+async function saveRoute(){
+  const id=document.getElementById('r-id').value;
+  const name=document.getElementById('r-name').value.trim();
+  const description=document.getElementById('r-desc').value.trim();
+  const is_morning=document.getElementById('r-morning').checked;
+  const active=document.getElementById('r-active').checked;
+  if(!name){alert('Route name required.');return;}
+  let r;
+  if(id)r=await fetch('/api/routes/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description,is_morning,active})});
+  else r=await fetch('/api/routes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description,is_morning})});
+  const d=await r.json();
+  if(d.success||d.id){closeModal('route-modal');loadRoutes();}
+  else{alert('Error saving route: '+(d.error||'Unknown error. Check your subscription status.'));}
+}
+async function deleteRoute(id){if(!confirm('Delete?'))return;await fetch('/api/routes/'+id,{method:'DELETE'});loadRoutes();}
+
+async function loadLogs(){
+  const r=await fetch('/api/logs');const data=await r.json();
+  document.getElementById('logs-body').innerHTML=data.map(l=>`<tr>
+    <td style="font-size:.82rem;white-space:nowrap">${l.time}</td>
+    <td><span class="badge-${l.user_type==='admin'?'red':'sky'}">${l.user_type}</span></td>
+    <td>${l.user_name}</td><td style="font-size:.85rem">${l.action}</td>
+    <td style="color:var(--muted);font-size:.8rem">${l.ip}</td></tr>`).join('');
+}
+
+async function loadSettings(){
+  const r=await fetch('/api/school/settings');const d=await r.json();
+  document.getElementById('s-morning').checked=d.morning_active;
+  document.getElementById('s-evening').checked=d.evening_active;
+  document.getElementById('s-link').value=d.public_link||'';
+  loadShareLink();
+}
+async function saveSettings(){
+  const r=await fetch('/api/school/settings',{method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({morning_active:document.getElementById('s-morning').checked,
+      evening_active:document.getElementById('s-evening').checked,
+      public_link:document.getElementById('s-link').value.trim()})});
+  const d=await r.json();
+  if(d.success){document.getElementById('settings-msg').classList.remove('hidden');
+    setTimeout(()=>document.getElementById('settings-msg').classList.add('hidden'),3000);}
+}
+async function logout(){await fetch('/api/logout',{method:'POST'});window.location.href='/';}
+init();
+
+// Service worker auto-update
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js').then(reg => {
+    window._swReg = reg;
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+          const b = document.createElement('div');
+          b.id = 'update-bar';
+          b.style.cssText = 'position:fixed;top:58px;left:0;right:0;z-index:2000;background:#1a5276;color:#fff;text-align:center;padding:.7rem;font-size:.9rem;font-weight:600';
+          b.innerHTML = '🔄 New version available. <button onclick="if(window._swReg&&window._swReg.waiting)window._swReg.waiting.postMessage({type:\'SKIP_WAITING\'})" style="margin-left:1rem;background:#e8a817;color:#000;border:none;padding:.3rem .9rem;border-radius:5px;font-weight:700;cursor:pointer">Update Now</button>';
+          document.body.prepend(b);
+        }
+      });
     });
-  } else {
-    r = await fetch('/api/routes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description, is_morning })
-    });
+  });
+  navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+}
+
+
+// ══════════════════════════════════════════════════════
+// DRIVERS MANAGEMENT
+// ══════════════════════════════════════════════════════
+async function loadDrivers() {
+  const r = await fetch('/api/admin/drivers');
+  const drivers = await r.json();
+  const tbody = document.getElementById('drivers-body');
+  
+  if (drivers.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);">No drivers added yet</td></tr>';
+    return;
   }
-  const d = await r.json();
-  if (d.success || d.id) { closeModal('route-modal'); loadRoutes(); }
-}
-
-async function deleteRoute(id) {
-  if (!confirm('Delete this route?')) return;
-  await fetch('/api/routes/' + id, { method: 'DELETE' });
-  loadRoutes();
-}
-
-// ── LOGS ──
-async function loadLogs() {
-  const r = await fetch('/api/logs?limit=100');
-  const data = await r.json();
-  document.getElementById('logs-body').innerHTML = data.map(l => `
+  
+  tbody.innerHTML = drivers.map(d => `
     <tr>
-      <td style="white-space:nowrap">${l.timestamp}</td>
-      <td><span class="badge-role" style="background:${l.user_type === 'admin' ? 'var(--red)' : 'var(--sky)'}">${l.user_type}</span></td>
-      <td>${l.user_name}</td>
-      <td>${l.action}</td>
-      <td style="color:var(--text-light);font-size:0.8rem">${l.ip}</td>
-    </tr>
-  `).join('') || '<tr><td colspan="5" class="muted" style="text-align:center;padding:1rem">No logs yet.</td></tr>';
-}
-
-// ── ADMINS ──
-async function loadAdmins() {
-  const r = await fetch('/api/admins');
-  const data = await r.json();
-  document.getElementById('admins-body').innerHTML = data.map(a => `
-    <tr>
-      <td><strong>${a.username}</strong></td>
-      <td>${a.role}</td>
+      <td>${d.name}</td>
+      <td>${d.phone}</td>
+      <td>${d.license || 'N/A'}</td>
+      <td>${d.assigned_route_name || '<span style="color:var(--muted);">Unassigned</span>'}</td>
+      <td>${d.is_tracking ? '<span style="color:var(--success);">● Tracking</span>' : '<span style="color:var(--muted);">○ Offline</span>'}</td>
       <td>
-        <button class="btn-sm btn-del" onclick="deleteAdmin(${a.id})">Delete</button>
+        <button class="btn-sm" onclick="editDriver(${d.id})">✏️</button>
+        <button class="btn-sm btn-danger" onclick="deleteDriver(${d.id},'${d.name}')">🗑️</button>
       </td>
     </tr>
   `).join('');
 }
 
-async function saveAdmin() {
-  const username = document.getElementById('adm-user').value.trim();
-  const password = document.getElementById('adm-pass').value.trim();
-  const role = document.getElementById('adm-role').value;
-  const err = document.getElementById('admin-modal-err');
-  err.classList.add('hidden');
+async function openAddDriver() {
+  document.getElementById('d-modal-title').textContent = 'Add Driver';
+  document.getElementById('d-id').value = '';
+  document.getElementById('d-name').value = '';
+  document.getElementById('d-phone').value = '';
+  document.getElementById('d-license').value = '';
+  document.getElementById('d-password').value = '';
+  document.getElementById('d-password').placeholder = 'Create password';
+  document.getElementById('d-route').value = '';
+  document.getElementById('d-active').checked = true;
+  document.getElementById('d-err').classList.add('hidden');
+  
+  await populateRouteDropdown('d-route');
+  document.getElementById('driver-modal').classList.remove('hidden');
+}
 
-  if (!username || !password) {
-    err.textContent = 'Username and password required.';
-    err.classList.remove('hidden');
+async function editDriver(id) {
+  // Read from already-loaded table row data via the drivers API
+  const r = await fetch('/api/admin/drivers');
+  const drivers = await r.json();
+  const driver = drivers.find(d => d.id === id);
+  if (!driver) return;
+
+  document.getElementById('d-modal-title').textContent = 'Edit Driver';
+  document.getElementById('d-id').value = driver.id;
+  document.getElementById('d-name').value = driver.name;
+  document.getElementById('d-phone').value = driver.phone;
+  document.getElementById('d-license').value = driver.license || '';
+  document.getElementById('d-password').value = '';
+  document.getElementById('d-password').placeholder = 'Leave blank to keep current';
+  document.getElementById('d-active').checked = driver.active;
+  document.getElementById('d-err').classList.add('hidden');
+
+  await populateRouteDropdown('d-route', driver.assigned_route_id);
+  document.getElementById('driver-modal').classList.remove('hidden');
+}
+
+async function saveDriver() {
+  const id = document.getElementById('d-id').value;
+  const name = document.getElementById('d-name').value.trim();
+  const phone = document.getElementById('d-phone').value.trim();
+  const license = document.getElementById('d-license').value.trim();
+  const password = document.getElementById('d-password').value;
+  const route_id = document.getElementById('d-route').value || null;
+  const active = document.getElementById('d-active').checked;
+  const errEl = document.getElementById('d-err');
+  
+  if (!name || !phone) {
+    errEl.textContent = 'Name and phone are required';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  
+  if (!id && !password) {
+    errEl.textContent = 'Password is required for new drivers';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  
+  const data = { name, phone, license, active, assigned_route_id: route_id };
+  if (password) data.password = password;
+  
+  try {
+    let r;
+    if (id) {
+      r = await fetch(`/api/admin/driver/${id}/edit`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      });
+    } else {
+      r = await fetch('/api/admin/driver/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      });
+    }
+    
+    if (r.ok) {
+      closeModal('driver-modal');
+      await loadDrivers();
+    } else {
+      const err = await r.json();
+      errEl.textContent = err.error || 'Error saving driver';
+      errEl.classList.remove('hidden');
+    }
+  } catch (err) {
+    errEl.textContent = 'Network error';
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function deleteDriver(id, name) {
+  if (!confirm(`Delete driver ${name}?\n\nThis will also delete their location history.`)) return;
+  
+  const r = await fetch(`/api/admin/driver/${id}/delete`, { method: 'DELETE' });
+  if (r.ok) {
+    await loadDrivers();
+  } else {
+    alert('Error deleting driver');
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// PARENTS MANAGEMENT
+// ══════════════════════════════════════════════════════
+async function loadParents() {
+  const r = await fetch('/api/admin/parents');
+  const parents = await r.json();
+  const tbody = document.getElementById('parents-body');
+  
+  if (parents.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);">No parents added yet</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = parents.map(p => `
+    <tr>
+      <td>${p.name}</td>
+      <td>${p.phone}</td>
+      <td>${p.child_name || 'N/A'}</td>
+      <td>${p.child_class || 'N/A'}</td>
+      <td>${p.assigned_route_name || '<span style="color:var(--muted);">Unassigned</span>'}</td>
+      <td>
+        <button class="btn-sm" onclick="editParent(${p.id})">✏️</button>
+        <button class="btn-sm btn-danger" onclick="deleteParent(${p.id},'${p.name}')">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openAddParent() {
+  document.getElementById('p-modal-title').textContent = 'Add Parent';
+  document.getElementById('p-id').value = '';
+  document.getElementById('p-name').value = '';
+  document.getElementById('p-phone').value = '';
+  document.getElementById('p-password').value = '';
+  document.getElementById('p-password').placeholder = 'Create password';
+  document.getElementById('p-child-name').value = '';
+  document.getElementById('p-child-class').value = '';
+  document.getElementById('p-route').value = '';
+  document.getElementById('p-active').checked = true;
+  document.getElementById('p-err').classList.add('hidden');
+  
+  await populateRouteDropdown('p-route');
+  document.getElementById('parent-modal').classList.remove('hidden');
+}
+
+async function editParent(id) {
+  const r = await fetch('/api/admin/parents');
+  const parents = await r.json();
+  const parent = parents.find(p => p.id === id);
+  if (!parent) return;
+
+  document.getElementById('p-modal-title').textContent = 'Edit Parent';
+  document.getElementById('p-id').value = parent.id;
+  document.getElementById('p-name').value = parent.name;
+  document.getElementById('p-phone').value = parent.phone;
+  document.getElementById('p-password').value = '';
+  document.getElementById('p-password').placeholder = 'Leave blank to keep current';
+  document.getElementById('p-child-name').value = parent.child_name || '';
+  document.getElementById('p-child-class').value = parent.child_class || '';
+  document.getElementById('p-active').checked = parent.active;
+  document.getElementById('p-err').classList.add('hidden');
+
+  await populateRouteDropdown('p-route', parent.assigned_route_id);
+  document.getElementById('parent-modal').classList.remove('hidden');
+}
+
+async function saveParent() {
+  const id = document.getElementById('p-id').value;
+  const name = document.getElementById('p-name').value.trim();
+  const phone = document.getElementById('p-phone').value.trim();
+  const password = document.getElementById('p-password').value;
+  const child_name = document.getElementById('p-child-name').value.trim();
+  const child_class = document.getElementById('p-child-class').value.trim();
+  const route_id = document.getElementById('p-route').value || null;
+  const active = document.getElementById('p-active').checked;
+  const errEl = document.getElementById('p-err');
+  
+  if (!name || !phone) {
+    errEl.textContent = 'Name and phone are required';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  
+  if (!id && !password) {
+    errEl.textContent = 'Password is required for new parents';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  
+  const data = { name, phone, child_name, child_class, active, assigned_route_id: route_id };
+  if (password) data.password = password;
+  
+  try {
+    let r;
+    if (id) {
+      r = await fetch(`/api/admin/parent/${id}/edit`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      });
+    } else {
+      r = await fetch('/api/admin/parent/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      });
+    }
+    
+    if (r.ok) {
+      closeModal('parent-modal');
+      await loadParents();
+    } else {
+      const err = await r.json();
+      errEl.textContent = err.error || 'Error saving parent';
+      errEl.classList.remove('hidden');
+    }
+  } catch (err) {
+    errEl.textContent = 'Network error';
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function deleteParent(id, name) {
+  if (!confirm(`Delete parent ${name}?`)) return;
+  
+  const r = await fetch(`/api/admin/parent/${id}/delete`, { method: 'DELETE' });
+  if (r.ok) {
+    await loadParents();
+  } else {
+    alert('Error deleting parent');
+  }
+}
+
+// Helper function to populate route dropdowns (resets before adding to avoid duplicates)
+async function populateRouteDropdown(selectId, selectedId) {
+  const r = await fetch('/api/routes');
+  const routes = await r.json();
+  const select = document.getElementById(selectId);
+  select.innerHTML = '<option value="">-- Select Route --</option>';
+  routes.forEach(route => {
+    const opt = document.createElement('option');
+    opt.value = route.id;
+    opt.textContent = `${route.name} (${route.is_morning ? 'Morning' : 'Evening'})`;
+    if (selectedId && route.id == selectedId) opt.selected = true;
+    select.appendChild(opt);
+  });
+}
+
+// ══════════════════════════════════════════════════════
+// SHARE / INSTALL APP LINK
+// ══════════════════════════════════════════════════════
+function getAppUrl() {
+  return window.location.origin; // e.g. https://mytransport.onrender.com
+}
+
+function copyAppLink() {
+  const url = getAppUrl();
+  navigator.clipboard.writeText(url).then(() => {
+    const msg = document.getElementById('copy-msg');
+    msg.classList.remove('hidden');
+    setTimeout(() => msg.classList.add('hidden'), 3000);
+  }).catch(() => {
+    // Fallback for older browsers
+    const el = document.createElement('textarea');
+    el.value = url;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    const msg = document.getElementById('copy-msg');
+    msg.classList.remove('hidden');
+    setTimeout(() => msg.classList.add('hidden'), 3000);
+  });
+}
+
+function shareViaWhatsApp() {
+  const url = getAppUrl();
+  const text = `Install *My School Transport* app on your phone:\n\n${url}\n\nOpen the link → tap Install/Add to Home Screen`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+}
+
+function shareViaSMS() {
+  const url = getAppUrl();
+  const text = `Install My School Transport app: ${url} — Open in browser, tap Add to Home Screen`;
+  window.location.href = `sms:?body=${encodeURIComponent(text)}`;
+}
+
+// Set the displayed app URL on settings load
+function loadShareLink() {
+  const el = document.getElementById('app-url');
+  if (el) el.textContent = getAppUrl();
+}
+
+// ══════════════════════════════════════════════════════
+// LIVE GPS TRACKING — ADMIN VIEW
+// ══════════════════════════════════════════════════════
+let adminMap = null;
+let adminMarkers = {};
+let trackingRefreshInterval = null;
+
+function initAdminMap() {
+  if (adminMap) return; // already initialized
+  adminMap = L.map('admin-map').setView([-1.2921, 36.8219], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors', maxZoom: 19
+  }).addTo(adminMap);
+}
+
+async function loadTrackingSection() {
+  // Small delay to ensure the section is visible before initializing map
+  setTimeout(() => {
+    initAdminMap();
+    refreshTracking();
+    // Auto-refresh every 15 seconds
+    if (trackingRefreshInterval) clearInterval(trackingRefreshInterval);
+    trackingRefreshInterval = setInterval(refreshTracking, 15000);
+  }, 100);
+}
+
+async function refreshTracking() {
+  try {
+    const r = await fetch('/api/admin/drivers');
+    if (!r.ok) return;
+    const drivers = await r.json();
+    renderTrackingCards(drivers);
+    updateAdminMapMarkers(drivers);
+  } catch (e) {
+    console.error('Tracking error:', e);
+  }
+}
+
+function renderTrackingCards(drivers) {
+  const container = document.getElementById('tracking-cards');
+  if (!container) return;
+
+  if (drivers.length === 0) {
+    container.innerHTML = '<p style="color:var(--muted);">No drivers added yet. Add drivers first.</p>';
     return;
   }
 
-  const r = await fetch('/api/admins', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, role })
+  container.innerHTML = drivers.map(d => {
+    const isLive = d.is_tracking && d.latitude && d.longitude;
+    const lastUpdate = d.last_location_update
+      ? (() => { const mins = Math.floor((Date.now() - new Date(d.last_location_update)) / 60000); return mins < 1 ? 'Just now' : `${mins}m ago`; })()
+      : 'Never';
+
+    return `
+      <div onclick="focusDriver(${d.id})" style="
+        background:var(--white);border-radius:10px;padding:1rem;
+        box-shadow:var(--sh);cursor:pointer;min-width:200px;flex:1;
+        border-left:4px solid ${isLive ? '#2ecc71' : '#ccc'};
+        transition:transform 0.2s;
+      " onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+          <strong style="font-size:0.95rem;">${d.name}</strong>
+          <span style="font-size:0.75rem;font-weight:700;color:${isLive ? '#2ecc71' : '#aaa'};">
+            ${isLive ? '● LIVE' : '○ OFFLINE'}
+          </span>
+        </div>
+        <div style="font-size:0.82rem;color:var(--muted);">
+          ${d.assigned_route_name || 'No route assigned'}
+        </div>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:0.3rem;">
+          Updated: ${lastUpdate}
+        </div>
+        ${isLive ? `<div style="font-size:0.75rem;color:#2ecc71;margin-top:0.3rem;">📍 Tap to view on map</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+function updateAdminMapMarkers(drivers) {
+  if (!adminMap) return;
+
+  const busIcon = L.divIcon({
+    html: '<div style="font-size:22px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));">🚌</div>',
+    className: '', iconSize: [28, 28], iconAnchor: [14, 14]
   });
-  const d = await r.json();
-  if (d.success) {
-    closeModal('admin-modal');
-    loadAdmins();
-  } else {
-    err.textContent = d.error || 'Error.';
-    err.classList.remove('hidden');
+
+  const offlineIcon = L.divIcon({
+    html: '<div style="font-size:18px;opacity:0.4;">🚌</div>',
+    className: '', iconSize: [24, 24], iconAnchor: [12, 12]
+  });
+
+  drivers.forEach(d => {
+    const isLive = d.is_tracking && d.latitude && d.longitude;
+    if (!isLive) {
+      // Remove old marker if driver went offline
+      if (adminMarkers[d.id]) {
+        adminMap.removeLayer(adminMarkers[d.id]);
+        delete adminMarkers[d.id];
+      }
+      return;
+    }
+
+    const pos = [d.latitude, d.longitude];
+    const popupText = `<strong>${d.name}</strong><br>${d.assigned_route_name || 'No route'}<br><span style="color:#2ecc71;">● Live</span>`;
+
+    if (adminMarkers[d.id]) {
+      adminMarkers[d.id].setLatLng(pos);
+      adminMarkers[d.id].setPopupContent(popupText);
+    } else {
+      adminMarkers[d.id] = L.marker(pos, { icon: busIcon })
+        .addTo(adminMap)
+        .bindPopup(popupText);
+    }
+  });
+
+  // If any live drivers, fit map to show all of them
+  const livePositions = drivers
+    .filter(d => d.is_tracking && d.latitude && d.longitude)
+    .map(d => [d.latitude, d.longitude]);
+
+  if (livePositions.length > 0) {
+    if (livePositions.length === 1) {
+      adminMap.setView(livePositions[0], 15);
+    } else {
+      adminMap.fitBounds(livePositions, { padding: [50, 50] });
+    }
   }
 }
 
-async function deleteAdmin(id) {
-  if (!confirm('Delete this admin?')) return;
-  await fetch('/api/admins/' + id, { method: 'DELETE' });
-  loadAdmins();
+function focusDriver(driverId) {
+  if (!adminMap || !adminMarkers[driverId]) return;
+  const marker = adminMarkers[driverId];
+  adminMap.setView(marker.getLatLng(), 16);
+  marker.openPopup();
 }
-
-// ── Wire up modal open buttons ──
-document.addEventListener('DOMContentLoaded', () => {
-  // Patch Add Teacher button
-  const addTeacherBtns = document.querySelectorAll("button[onclick=\"openModal('teacher-modal')\"]");
-  addTeacherBtns.forEach(b => {
-    b.setAttribute('onclick', 'openAddTeacher()');
-  });
-  // Patch Add Route button
-  const addRouteBtns = document.querySelectorAll("button[onclick=\"openModal('route-modal')\"]");
-  addRouteBtns.forEach(b => {
-    b.setAttribute('onclick', 'openAddRoute()');
-  });
-});
-
-function openAddRoute() {
-  document.getElementById('route-modal-title').textContent = 'Add Route';
-  document.getElementById('edit-route-id').value = '';
-  document.getElementById('r-name').value = '';
-  document.getElementById('r-desc').value = '';
-  document.getElementById('r-morning').checked = false;
-  document.getElementById('r-active').checked = true;
-  openModal('route-modal');
-}
-
-// Init
-initPage();

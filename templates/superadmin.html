@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Super Admin – STS</title>
+<link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body class="dashboard-body">
+<nav class="topnav">
+  <div class="nav-left">
+    <span class="nav-logo">🚌</span>
+    <span id="nav-school-name" class="nav-title">Super Admin Dashboard</span>
+  </div>
+  <div class="nav-right">
+    <span id="nav-user" class="nav-user"></span>
+    <span class="badge-role">Super Admin</span>
+    <button class="btn-outline-sm" onclick="logout()">Logout</button>
+  </div>
+</nav>
+<div class="dashboard-layout">
+  <aside class="sidebar">
+    <ul class="nav-menu">
+      <li class="nav-item active" onclick="showSection('summary', event)">📊 Summary</li>
+      <li class="nav-item" onclick="showSection('schools', event)">🏫 Schools</li>
+      <li class="nav-item" onclick="showSection('payments', event)">💳 Payments</li>
+    </ul>
+  </aside>
+  <main class="main-content">
+    <section id="section-summary" class="section active">
+      <div class="section-header">
+        <h2>Platform Summary</h2>
+        <button class="btn-outline" onclick="loadDashboard()">🔄 Refresh</button>
+      </div>
+      <div class="summary-grid" id="summary-grid"></div>
+    </section>
+    <section id="section-schools" class="section">
+      <div class="section-header">
+        <h2>Registered Schools</h2>
+        <button class="btn-outline" onclick="loadSchools()">🔄 Refresh</button>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr><th>Name</th><th>Code</th><th>Plan</th><th>Status</th><th>Trial Ends</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="schools-body"></tbody>
+      </table>
+    </section>
+    <section id="section-payments" class="section">
+      <div class="section-header">
+        <h2>Pending Payments</h2>
+        <button class="btn-outline" onclick="loadPayments()">🔄 Refresh</button>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr><th>School</th><th>Code</th><th>Amount</th><th>Phone</th><th>Tx Code</th><th>Submitted</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="super-payments-body"></tbody>
+      </table>
+    </section>
+  </main>
+</div>
+
+<div id="school-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Edit School</h3>
+      <button class="modal-close" onclick="closeModal('school-modal')">✕</button>
+    </div>
+    <input type="hidden" id="edit-school-id"/>
+    <div class="form-group">
+      <label>School Name</label>
+      <input type="text" id="edit-school-name"/>
+    </div>
+    <div class="form-group">
+      <label>Plan</label>
+      <select id="edit-school-plan" class="form-select"></select>
+    </div>
+    <div class="form-group">
+      <label>Public Link</label>
+      <input type="text" id="edit-school-link" placeholder="https://..."/>
+    </div>
+    <div class="form-group">
+      <label>Link Label</label>
+      <input type="text" id="edit-school-link-label" placeholder="Weekly School Transport Link"/>
+    </div>
+    <div class="form-group toggle-row">
+      <label>Active School</label>
+      <label class="toggle"><input type="checkbox" id="edit-school-active"/><span class="slider"></span></label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeModal('school-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveSchool()">Save</button>
+    </div>
+  </div>
+</div>
+<script src="/static/js/superadmin.js"></script>
+</body>
+</html>

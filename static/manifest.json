@@ -1,0 +1,38 @@
+{
+  "name": "My School Transport",
+  "short_name": "My Transport",
+  "description": "Manage school transport routes, allocate teachers, generate rosters and track duties.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a5276",
+  "theme_color": "#1a5276",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Teacher Login",
+      "short_name": "Teacher",
+      "url": "/",
+      "description": "Log in as a teacher to view your duties"
+    },
+    {
+      "name": "School Admin",
+      "short_name": "Admin",
+      "url": "/",
+      "description": "Log in as school admin"
+    }
+  ]
+}

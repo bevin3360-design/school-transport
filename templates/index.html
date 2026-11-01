@@ -1,123 +1,573 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>School Transport System</title>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>My School Transport – Login</title>
+<meta name="theme-color" content="#1a5276"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="My School Transport"/>
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png"/>
+<link rel="shortcut icon" href="/static/icons/icon-192.png"/>
+<link rel="manifest" href="/static/manifest.json"/>
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
 <link rel="stylesheet" href="/static/css/style.css"/>
+<style>
+/* ── SPLASH SCREEN ───────────────────────────── */
+#splash {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #0a2342 0%, #1a5276 50%, #0a2342 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  transition: opacity 0.6s ease, visibility 0.6s ease;
+}
+#splash.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Road */
+.road {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: #1a1a2e;
+  overflow: hidden;
+}
+.road-line {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 6px;
+  width: 80px;
+  background: #f0c040;
+  border-radius: 3px;
+  animation: roadMove 0.6s linear infinite;
+}
+.road-line:nth-child(1) { left: 10%; animation-delay: 0s; }
+.road-line:nth-child(2) { left: 30%; animation-delay: -0.15s; }
+.road-line:nth-child(3) { left: 50%; animation-delay: -0.3s; }
+.road-line:nth-child(4) { left: 70%; animation-delay: -0.45s; }
+.road-line:nth-child(5) { left: 90%; animation-delay: -0.6s; }
+
+@keyframes roadMove {
+  0%   { transform: translateY(-50%) translateX(0); opacity: 1; }
+  100% { transform: translateY(-50%) translateX(-200px); opacity: 0.3; }
+}
+
+/* Bus SVG container */
+.bus-wrap {
+  position: relative;
+  margin-bottom: 100px;
+  animation: busBounce 0.5s ease-in-out infinite alternate;
+}
+@keyframes busBounce {
+  0%   { transform: translateY(0px); }
+  100% { transform: translateY(-8px); }
+}
+
+/* Bus SVG */
+.bus-svg {
+  width: 200px;
+  height: auto;
+  filter: drop-shadow(0 10px 30px rgba(240,192,64,0.4));
+}
+
+/* Wheels spinning */
+.wheel {
+  animation: wheelSpin 0.4s linear infinite;
+  transform-origin: center;
+}
+@keyframes wheelSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Exhaust puffs */
+.puff {
+  position: absolute;
+  left: -10px;
+  bottom: 20px;
+  width: 12px;
+  height: 12px;
+  background: rgba(255,255,255,0.3);
+  border-radius: 50%;
+  animation: puffMove 1s ease-out infinite;
+}
+.puff:nth-child(2) { animation-delay: 0.33s; width:8px; height:8px; }
+.puff:nth-child(3) { animation-delay: 0.66s; width:6px; height:6px; }
+@keyframes puffMove {
+  0%   { transform: translate(0,0) scale(1); opacity: 0.6; }
+  100% { transform: translate(-40px,-20px) scale(2); opacity: 0; }
+}
+
+/* Stars / speed lines */
+.speed-line {
+  position: absolute;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+  border-radius: 2px;
+  animation: speedMove 0.8s linear infinite;
+}
+.speed-line:nth-child(1) { width: 60px; top: 30%; left: -80px; animation-delay: 0s; }
+.speed-line:nth-child(2) { width: 40px; top: 50%; left: -60px; animation-delay: 0.2s; }
+.speed-line:nth-child(3) { width: 80px; top: 70%; left: -100px; animation-delay: 0.4s; }
+@keyframes speedMove {
+  0%   { transform: translateX(0); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: translateX(300px); opacity: 0; }
+}
+
+/* App name */
+.splash-title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 1px;
+  margin-bottom: 0.3rem;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+.splash-sub {
+  font-size: 0.95rem;
+  color: rgba(255,255,255,0.7);
+  margin-bottom: 2rem;
+}
+
+/* Loading dots */
+.loading-dots {
+  display: flex;
+  gap: 8px;
+  margin-top: 1rem;
+}
+.dot {
+  width: 10px;
+  height: 10px;
+  background: #f0c040;
+  border-radius: 50%;
+  animation: dotBounce 0.6s ease-in-out infinite alternate;
+}
+.dot:nth-child(1) { animation-delay: 0s; }
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dotBounce {
+  0%   { transform: translateY(0); opacity: 0.4; }
+  100% { transform: translateY(-10px); opacity: 1; }
+}
+
+/* Loading text */
+.loading-text {
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.5);
+  margin-top: 1rem;
+  animation: fadeText 2s ease-in-out infinite;
+}
+@keyframes fadeText {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 1; }
+}
+</style>
 </head>
 <body>
-<div class="login-wrapper">
-  <div class="login-card">
-    <div class="logo-area">
-      <div class="logo-icon">🚌</div>
-      <h1 id="school-name-title">School Transport System</h1>
-      <p class="subtitle">Manage. Allocate. Track.</p>
-    </div>
 
-    <!-- Tab Switch -->
-    <div class="tab-bar">
-      <button class="tab-btn active" onclick="switchTab('teacher')">Teacher Login</button>
-      <button class="tab-btn" onclick="switchTab('admin')">Admin Login</button>
-    </div>
+<!-- ══════════ ANIMATED SPLASH SCREEN ══════════ -->
+<div id="splash">
+  <!-- Speed lines -->
+  <div class="speed-line"></div>
+  <div class="speed-line"></div>
+  <div class="speed-line"></div>
 
-    <!-- Teacher Login -->
-    <div id="tab-teacher" class="tab-content active">
-      <div class="form-group">
-        <label>Teaching Code</label>
-        <input type="text" id="t-code" placeholder="e.g. TCH001" autocomplete="off"/>
-      </div>
-      <div class="form-group">
-        <label>Passcode</label>
-        <input type="password" id="t-pass" placeholder="Your passcode"/>
-      </div>
-      <button class="btn-primary full-width" onclick="teacherLogin()">Sign In</button>
-      <p id="t-error" class="error-msg hidden"></p>
-    </div>
+  <!-- Animated Bus -->
+  <div class="bus-wrap">
+    <!-- Exhaust puffs -->
+    <div class="puff"></div>
+    <div class="puff"></div>
+    <div class="puff"></div>
 
-    <!-- Admin Login -->
-    <div id="tab-admin" class="tab-content">
-      <div class="form-group">
-        <label>Username</label>
-        <input type="text" id="a-user" placeholder="admin username" autocomplete="off"/>
-      </div>
-      <div class="form-group">
-        <label>Password</label>
-        <input type="password" id="a-pass" placeholder="password"/>
-      </div>
-      <button class="btn-primary full-width" onclick="adminLogin()">Sign In</button>
-      <p id="a-error" class="error-msg hidden"></p>
-    </div>
+    <!-- Inline SVG School Bus -->
+    <svg class="bus-svg" viewBox="0 0 220 100" xmlns="http://www.w3.org/2000/svg">
+      <!-- Bus Body -->
+      <rect x="20" y="20" width="175" height="55" rx="10" ry="10" fill="#f0c040"/>
+      <!-- Front bumper -->
+      <rect x="185" y="55" width="18" height="12" rx="4" fill="#e0a800"/>
+      <!-- Rear bumper -->
+      <rect x="17" y="55" width="10" height="12" rx="4" fill="#e0a800"/>
+      <!-- Roof -->
+      <rect x="25" y="14" width="130" height="10" rx="5" fill="#e0a800"/>
+      <!-- Emergency lights -->
+      <rect x="30" y="10" width="12" height="6" rx="3" fill="#ff4444"/>
+      <rect x="48" y="10" width="12" height="6" rx="3" fill="#ff4444"/>
+      <!-- Windows -->
+      <rect x="30" y="26" width="25" height="18" rx="3" fill="#a8d8f0"/>
+      <rect x="62" y="26" width="25" height="18" rx="3" fill="#a8d8f0"/>
+      <rect x="94" y="26" width="25" height="18" rx="3" fill="#a8d8f0"/>
+      <rect x="126" y="26" width="25" height="18" rx="3" fill="#a8d8f0"/>
+      <!-- Driver window -->
+      <rect x="170" y="26" width="22" height="18" rx="3" fill="#a8d8f0"/>
+      <!-- Door -->
+      <rect x="158" y="40" width="16" height="25" rx="3" fill="#e0a800"/>
+      <circle cx="162" cy="53" r="2" fill="#f0c040"/>
+      <!-- SCHOOL text -->
+      <text x="60" y="55" font-family="Arial" font-weight="bold" font-size="11" fill="#1a5276">MY TRANSPORT</text>
+      <!-- Headlight -->
+      <ellipse cx="198" cy="47" rx="6" ry="5" fill="#fffbe0" opacity="0.9"/>
+      <ellipse cx="199" cy="47" rx="3" ry="3" fill="#fff"/>
+      <!-- Tail light -->
+      <rect x="18" y="42" width="6" height="8" rx="2" fill="#ff6666"/>
+      <!-- Wheel wells -->
+      <ellipse cx="55" cy="76" rx="20" ry="8" fill="#1a1a2e" opacity="0.5"/>
+      <ellipse cx="155" cy="76" rx="20" ry="8" fill="#1a1a2e" opacity="0.5"/>
+      <!-- Wheels -->
+      <g class="wheel" style="transform-origin:55px 76px">
+        <circle cx="55" cy="76" r="16" fill="#333"/>
+        <circle cx="55" cy="76" r="10" fill="#555"/>
+        <circle cx="55" cy="76" r="4" fill="#888"/>
+        <line x1="55" y1="60" x2="55" y2="92" stroke="#777" stroke-width="2"/>
+        <line x1="39" y1="76" x2="71" y2="76" stroke="#777" stroke-width="2"/>
+      </g>
+      <g class="wheel" style="transform-origin:155px 76px">
+        <circle cx="155" cy="76" r="16" fill="#333"/>
+        <circle cx="155" cy="76" r="10" fill="#555"/>
+        <circle cx="155" cy="76" r="4" fill="#888"/>
+        <line x1="155" y1="60" x2="155" y2="92" stroke="#777" stroke-width="2"/>
+        <line x1="139" y1="76" x2="171" y2="76" stroke="#777" stroke-width="2"/>
+      </g>
+      <!-- GPS ping on roof -->
+      <circle cx="110" cy="12" r="4" fill="#2ecc71"/>
+      <circle cx="110" cy="12" r="8" fill="none" stroke="#2ecc71" stroke-width="1.5" opacity="0.6">
+        <animate attributeName="r" values="4;14" dur="1.5s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.8;0" dur="1.5s" repeatCount="indefinite"/>
+      </circle>
+    </svg>
+  </div>
 
-    <div class="footer-note">
-      <span class="badge-red">STS</span> Secure · Role-Based · Automated
-    </div>
+  <!-- App Name -->
+  <div class="splash-title">My School Transport</div>
+  <div class="splash-sub">Manage · Track · Connect</div>
+
+  <!-- Loading dots -->
+  <div class="loading-dots">
+    <div class="dot"></div>
+    <div class="dot"></div>
+    <div class="dot"></div>
+  </div>
+  <div class="loading-text" id="loading-text">Starting up...</div>
+
+  <!-- Animated Road -->
+  <div class="road">
+    <div class="road-line"></div>
+    <div class="road-line"></div>
+    <div class="road-line"></div>
+    <div class="road-line"></div>
+    <div class="road-line"></div>
   </div>
 </div>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="logo-area">
+      <img src="/static/icons/icon-192.png" alt="My School Transport" style="width:80px;height:80px;border-radius:16px;margin-bottom:1rem;"/>
+      <h1>My School Transport</h1>
+      <p class="subtitle">Manage. Allocate. Track. — Powered by MST Platform</p>
+    </div>
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('teacher',this)">Teacher</button>
+      <button class="tab-btn" onclick="switchTab('driver',this)">Driver</button>
+      <button class="tab-btn" onclick="switchTab('parent',this)">Parent</button>
+      <button class="tab-btn" onclick="switchTab('admin',this)">Admin</button>
+      <button class="tab-btn" onclick="switchTab('super',this)">Super</button>
+    </div>
 
+    <!-- TEACHER -->
+    <div id="tab-teacher" class="tab-content active">
+      <div class="form-group"><label>School Code</label>
+        <input type="text" id="t-school" placeholder="e.g. FSL001" autocomplete="off"/></div>
+      <div class="form-group"><label>Teaching Code</label>
+        <input type="text" id="t-code" placeholder="e.g. TCH018" autocomplete="off"/></div>
+      <div class="form-group"><label>Passcode</label>
+        <input type="password" id="t-pass" placeholder="Your passcode"/></div>
+      <button class="btn-primary full" onclick="teacherLogin()">Sign In</button>
+      <p id="t-err" class="error-msg hidden"></p>
+    </div>
+
+    <!-- DRIVER -->
+    <div id="tab-driver" class="tab-content">
+      <div class="form-group"><label>School Code</label>
+        <input type="text" id="d-school" placeholder="e.g. FSL001" autocomplete="off"/></div>
+      <div class="form-group"><label>Phone Number</label>
+        <input type="tel" id="d-phone" placeholder="0712345678" autocomplete="off"/></div>
+      <div class="form-group"><label>Password</label>
+        <input type="password" id="d-pass" placeholder="Your password"/></div>
+      <button class="btn-primary full" onclick="driverLogin()">Sign In</button>
+      <p id="d-err" class="error-msg hidden"></p>
+    </div>
+
+    <!-- PARENT -->
+    <div id="tab-parent" class="tab-content">
+      <div class="form-group"><label>School Code</label>
+        <input type="text" id="p-school" placeholder="e.g. FSL001" autocomplete="off"/></div>
+      <div class="form-group"><label>Phone Number</label>
+        <input type="tel" id="p-phone" placeholder="0712345678" autocomplete="off"/></div>
+      <div class="form-group"><label>Password</label>
+        <input type="password" id="p-pass" placeholder="Your password"/></div>
+      <button class="btn-primary full" onclick="parentLogin()">Sign In</button>
+      <p id="p-err" class="error-msg hidden"></p>
+      <hr style="margin:1rem 0;border:none;border-top:1px solid var(--grey)"/>
+      <p style="text-align:center;font-size:.85rem;color:var(--muted);">
+        New parent? 
+        <a href="#" onclick="switchTab('parent-reg', document.querySelector('.tab-btn[data-tab=parent-reg]'))" 
+           style="color:var(--sky);font-weight:600;">Register here →</a>
+      </p>
+    </div>
+
+    <!-- PARENT REGISTRATION -->
+    <div id="tab-parent-reg" class="tab-content">
+      <p style="font-size:.85rem;background:var(--sky-light);padding:.8rem;border-radius:8px;margin-bottom:1rem;">
+        Register yourself as a parent. Ask your school admin for the School Code.
+      </p>
+      <div class="form-group"><label>School Code</label>
+        <input type="text" id="pr-school" placeholder="e.g. FSL001" autocomplete="off"/></div>
+      <div class="form-group"><label>Your Name</label>
+        <input type="text" id="pr-name" placeholder="Full name"/></div>
+      <div class="form-group"><label>Phone Number</label>
+        <input type="tel" id="pr-phone" placeholder="0712345678"/></div>
+      <div class="form-group"><label>Password</label>
+        <input type="password" id="pr-pass" placeholder="Create a password"/></div>
+      <div class="form-group"><label>Child's Name</label>
+        <input type="text" id="pr-child" placeholder="e.g. Brian Mwangi"/></div>
+      <div class="form-group"><label>Child's Class</label>
+        <input type="text" id="pr-class" placeholder="e.g. Grade 4A"/></div>
+      <button class="btn-primary full" onclick="parentSelfRegister()">Register</button>
+      <p id="pr-err" class="error-msg hidden"></p>
+      <p id="pr-ok" class="success-msg hidden"></p>
+      <p style="text-align:center;font-size:.85rem;margin-top:.8rem;">
+        Already registered? 
+        <a href="#" onclick="switchTabByName('parent')" style="color:var(--sky);font-weight:600;">Login →</a>
+      </p>
+    </div>
+
+    <!-- ADMIN -->
+    <div id="tab-admin" class="tab-content">
+      <div class="form-group"><label>Username</label>
+        <input type="text" id="a-user" placeholder="Admin username" autocomplete="off"/></div>
+      <div class="form-group"><label>Password</label>
+        <input type="password" id="a-pass" placeholder="Password"/></div>
+      <button class="btn-primary full" onclick="adminLogin()">Sign In</button>
+      <p id="a-err" class="error-msg hidden"></p>
+      <p style="text-align:center;margin-top:1rem;font-size:.85rem;">
+        New school? <a href="/register" style="color:var(--sky);font-weight:600;">Register here →</a>
+      </p>
+    </div>
+
+    <!-- SUPER -->
+    <div id="tab-super" class="tab-content">
+      <div class="form-group"><label>Super Admin Username</label>
+        <input type="text" id="s-user" placeholder="superadmin" autocomplete="off"/></div>
+      <div class="form-group"><label>Password</label>
+        <input type="password" id="s-pass" placeholder="Password"/></div>
+      <button class="btn-primary full" onclick="superLogin()">Sign In</button>
+      <p id="s-err" class="error-msg hidden"></p>
+    </div>
+
+    <div style="text-align:center;margin-top:1.5rem;font-size:.78rem;color:var(--muted);">
+      <span class="badge-red">MST</span> Secure · Role-Based · Multi-School
+    </div>
+
+    <!-- Install App Button -->
+    <button id="install-btn" class="btn-primary full" style="display:none;margin-top:1rem;background:linear-gradient(135deg,#2ecc71,#27ae60);border:none;box-shadow:0 4px 12px rgba(46,204,113,0.3);" onclick="installApp()">
+      📱 Install App on This Device
+    </button>
+  </div>
+</div>
 <script>
-async function loadSchoolName() {
-  const r = await fetch('/api/settings');
-  const d = await r.json();
-  document.getElementById('school-name-title').textContent = d.school_name + ' – Transport System';
-  document.title = d.school_name + ' Transport System';
+function switchTab(tab, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  btn.classList.add('active');
+}
+async function teacherLogin() {
+  const school_code=document.getElementById('t-school').value.trim();
+  const teaching_code=document.getElementById('t-code').value.trim();
+  const passcode=document.getElementById('t-pass').value.trim();
+  const err=document.getElementById('t-err');
+  err.classList.add('hidden');
+  const r=await fetch('/api/teacher/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({school_code,teaching_code,passcode})});
+  const d=await r.json();
+  if(d.success) window.location.href='/teacher';
+  else{err.textContent=d.message||'Login failed';err.classList.remove('hidden');}
+}
+async function adminLogin() {
+  const username=document.getElementById('a-user').value.trim();
+  const password=document.getElementById('a-pass').value;
+  const err=document.getElementById('a-err');
+  err.classList.add('hidden');
+  const r=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username,password})});
+  const d=await r.json();
+  if(d.success) window.location.href='/admin';
+  else{err.textContent=d.message||'Login failed';err.classList.remove('hidden');}
+}
+async function superLogin() {
+  const username=document.getElementById('s-user').value.trim();
+  const password=document.getElementById('s-pass').value;
+  const err=document.getElementById('s-err');
+  err.classList.add('hidden');
+  const r=await fetch('/api/super/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username,password})});
+  const d=await r.json();
+  if(d.success) window.location.href='/super';
+  else{err.textContent=d.message||'Login failed';err.classList.remove('hidden');}
+}
+async function driverLogin() {
+  const school_code=document.getElementById('d-school').value.trim();
+  const phone=document.getElementById('d-phone').value.trim();
+  const password=document.getElementById('d-pass').value;
+  const err=document.getElementById('d-err');
+  err.classList.add('hidden');
+  const r=await fetch('/api/driver/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({school_code,phone,password})});
+  const d=await r.json();
+  if(d.success) window.location.href='/driver';
+  else{err.textContent=d.message||'Login failed';err.classList.remove('hidden');}
+}
+async function parentLogin() {
+  const school_code=document.getElementById('p-school').value.trim();
+  const phone=document.getElementById('p-phone').value.trim();
+  const password=document.getElementById('p-pass').value;
+  const err=document.getElementById('p-err');
+  err.classList.add('hidden');
+  const r=await fetch('/api/parent/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({school_code,phone,password})});
+  const d=await r.json();
+  if(d.success) window.location.href='/parent';
+  else{err.textContent=d.message||'Login failed';err.classList.remove('hidden');}
 }
 
-function switchTab(tab) {
+function switchTabByName(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  document.getElementById('tab-' + tab).classList.add('active');
-  event.target.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
 }
 
-async function teacherLogin() {
-  const code = document.getElementById('t-code').value.trim();
-  const pass = document.getElementById('t-pass').value.trim();
-  const err = document.getElementById('t-error');
-  err.classList.add('hidden');
-  const r = await fetch('/api/teacher/login', {
+async function parentSelfRegister() {
+  const school_code = document.getElementById('pr-school').value.trim();
+  const name        = document.getElementById('pr-name').value.trim();
+  const phone       = document.getElementById('pr-phone').value.trim();
+  const password    = document.getElementById('pr-pass').value;
+  const child_name  = document.getElementById('pr-child').value.trim();
+  const child_class = document.getElementById('pr-class').value.trim();
+  const errEl = document.getElementById('pr-err');
+  const okEl  = document.getElementById('pr-ok');
+  errEl.classList.add('hidden');
+  okEl.classList.add('hidden');
+
+  if (!school_code || !name || !phone || !password) {
+    errEl.textContent = 'School code, name, phone and password are required';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const r = await fetch('/api/parent/register', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({teaching_code: code, passcode: pass})
+    body: JSON.stringify({school_code, name, phone, password, child_name, child_class})
   });
   const d = await r.json();
-  if (d.success) {
-    window.location.href = '/teacher';
+  if (r.ok) {
+    okEl.textContent = '✓ ' + d.message;
+    okEl.classList.remove('hidden');
+    // Auto-switch to login after 2s
+    setTimeout(() => switchTabByName('parent'), 2000);
   } else {
-    err.textContent = d.message || 'Login failed';
-    err.classList.remove('hidden');
+    errEl.textContent = d.error || 'Registration failed';
+    errEl.classList.remove('hidden');
   }
 }
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Enter')return;
+  const active=document.querySelector('.tab-content.active').id;
+  if(active==='tab-teacher')teacherLogin();
+  else if(active==='tab-driver')driverLogin();
+  else if(active==='tab-parent')parentLogin();
+  else if(active==='tab-admin')adminLogin();
+  else superLogin();
+});
+// ── SPLASH SCREEN ──────────────────────────────────
+const loadingMessages = [
+  'Starting up...',
+  'Loading routes...',
+  'Connecting GPS...',
+  'Almost ready...'
+];
+let msgIndex = 0;
+const loadingText = document.getElementById('loading-text');
 
-async function adminLogin() {
-  const user = document.getElementById('a-user').value.trim();
-  const pass = document.getElementById('a-pass').value.trim();
-  const err = document.getElementById('a-error');
-  err.classList.add('hidden');
-  const r = await fetch('/api/admin/login', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({username: user, password: pass})
-  });
-  const d = await r.json();
-  if (d.success) {
-    window.location.href = '/admin';
-  } else {
-    err.textContent = d.message || 'Login failed';
-    err.classList.remove('hidden');
-  }
+const msgTimer = setInterval(() => {
+  msgIndex = (msgIndex + 1) % loadingMessages.length;
+  loadingText.textContent = loadingMessages[msgIndex];
+}, 1200);
+
+function hideSplash() {
+  clearInterval(msgTimer);
+  const splash = document.getElementById('splash');
+  splash.classList.add('hidden');
+  setTimeout(() => splash.remove(), 700);
 }
 
-// Allow Enter key
-document.addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
-    const activeTab = document.querySelector('.tab-content.active').id;
-    if (activeTab === 'tab-teacher') teacherLogin();
-    else adminLogin();
-  }
+// Hide splash when page is fully loaded (min 2.5s for effect)
+const splashStart = Date.now();
+window.addEventListener('load', () => {
+  const elapsed = Date.now() - splashStart;
+  const minTime = 2500;
+  const delay = Math.max(0, minTime - elapsed);
+  setTimeout(hideSplash, delay);
 });
 
-loadSchoolName();
+// Fallback — hide after 8s no matter what
+setTimeout(hideSplash, 8000);
+
+// ── PWA Install Prompt ──────────────────────────────
+let deferredPrompt;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('install-btn').style.display = 'block';
+});
+
+async function installApp() {
+  if (!deferredPrompt) {
+    alert('App is already installed or not installable on this device');
+    return;
+  }
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if (outcome === 'accepted') {
+    document.getElementById('install-btn').style.display = 'none';
+  }
+  deferredPrompt = null;
+}
+
+// Hide button if already installed
+window.addEventListener('appinstalled', () => {
+  document.getElementById('install-btn').style.display = 'none';
+});
+
+// Check if already installed (iOS/Safari)
+if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+  document.getElementById('install-btn').style.display = 'none';
+}
+
+// ── Service Worker Registration ──────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js').catch(()=>{});
+}
 </script>
 </body>
 </html>

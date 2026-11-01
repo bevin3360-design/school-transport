@@ -1,747 +1,1643 @@
+"""
+SCHOOL TRANSPORT SYSTEM — Multi-Tenant Platform v2
+Owner: Super Admin controls all schools
+Payment: M-Pesa to 0753538323
+Trial: 30 days free per school
+"""
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, date, timedelta
 from functools import wraps
-import json
-import os
-import re
+import os, re, json
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'sts-secret-key-2024-school-transport')
-# Use /tmp for writable storage on Render, local instance folder otherwise
-if os.environ.get('RENDER'):
-    db_path = '/tmp/school_transport.db'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'STS-PLATFORM-2026-SUPERKEY')
+
+# ── DATABASE: PostgreSQL in production, SQLite locally ──
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+if DATABASE_URL:
+    # Render gives postgres:// but SQLAlchemy needs postgresql://
+    if DATABASE_URL.startswith('postgres://'):
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 else:
-    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'school_transport.db')
+    # Local development — use SQLite
+    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           'instance', 'sts_platform.db')
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 CORS(app)
 db = SQLAlchemy(app)
 
-# ─────────────────────────────────────────
-# RATE LIMITING (brute force protection)
-# ─────────────────────────────────────────
-login_attempts = {}  # ip -> [timestamps]
+# ── PAYMENT CONFIG ──────────────────────
+MPESA_NUMBER = "0753538323"
+MPESA_NAME   = "KEVIN OGUTU"
+PLANS = {
+    'basic':    {'name': 'Basic',    'price': 500,  'teachers': 10, 'routes': 4},
+    'standard': {'name': 'Standard', 'price': 1500, 'teachers': 20, 'routes': 8},
+    'premium':  {'name': 'Premium',  'price': 3000, 'teachers': 999,'routes': 999},
+}
+TRIAL_DAYS = 30
 
-def check_rate_limit(ip, max_attempts=10, window=300):
-    """Block IP after max_attempts in window seconds."""
-    now = datetime.utcnow().timestamp()
-    attempts = login_attempts.get(ip, [])
-    attempts = [t for t in attempts if now - t < window]
-    if len(attempts) >= max_attempts:
-        return False
-    attempts.append(now)
-    login_attempts[ip] = attempts
-    return True
-
-def sanitize(value, max_len=200):
-    """Strip truly dangerous characters only — allow names, apostrophes, hyphens etc."""
-    if not value:
-        return ''
-    value = str(value).strip()[:max_len]
-    # Only remove HTML/script injection characters, keep apostrophes and normal name chars
-    value = re.sub(r'[<>\\]', '', value)
-    return value
-
-# ─────────────────────────────────────────
+# ════════════════════════════════════════
 # MODELS
-# ─────────────────────────────────────────
+# ════════════════════════════════════════
 
-class Settings(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    school_name = db.Column(db.String(200), default='My School')
-    morning_route_active = db.Column(db.Boolean, default=False)
-    evening_route_active = db.Column(db.Boolean, default=False)
-    public_link = db.Column(db.String(300), default='')
-    link_label = db.Column(db.String(100), default='Weekly School Transport Link')
+class School(db.Model):
+    id            = db.Column(db.Integer, primary_key=True)
+    name          = db.Column(db.String(200), nullable=False)
+    code          = db.Column(db.String(20), unique=True, nullable=False)
+    email         = db.Column(db.String(120))
+    phone         = db.Column(db.String(20))
+    county        = db.Column(db.String(100))
+    plan          = db.Column(db.String(20), default='basic')
+    status        = db.Column(db.String(20), default='trial')  # trial/active/expired/suspended
+    trial_start   = db.Column(db.Date, default=date.today)
+    trial_end     = db.Column(db.Date)
+    subscription_end = db.Column(db.Date)
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow)
+    morning_active = db.Column(db.Boolean, default=False)
+    evening_active = db.Column(db.Boolean, default=False)
+    public_link   = db.Column(db.String(300), default='')
 
-class Admin(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
+    def is_active(self):
+        today = date.today()
+        if self.status == 'trial':
+            return today <= (self.trial_end or today)
+        if self.status == 'active':
+            return today <= (self.subscription_end or today)
+        return False
+
+    def days_remaining(self):
+        today = date.today()
+        if self.status == 'trial':
+            end = self.trial_end or today
+        elif self.status == 'active':
+            end = self.subscription_end or today
+        else:
+            return 0
+        return max(0, (end - today).days)
+
+class SchoolAdmin(db.Model):
+    id            = db.Column(db.Integer, primary_key=True)
+    school_id     = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=False)
+    username      = db.Column(db.String(80), nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
-    role = db.Column(db.String(50), default='coordinator')  # coordinator, headteacher, it
+    role          = db.Column(db.String(50), default='coordinator')
+    school        = db.relationship('School', backref='admins')
 
-    def set_password(self, pw):
-        self.password_hash = generate_password_hash(pw)
-
-    def check_password(self, pw):
-        return check_password_hash(self.password_hash, pw)
-
-class Route(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    description = db.Column(db.String(200))
-    is_morning = db.Column(db.Boolean, default=False)
-    active = db.Column(db.Boolean, default=True)
+    def set_password(self, pw): self.password_hash = generate_password_hash(pw)
+    def check_password(self, pw): return check_password_hash(self.password_hash, pw)
 
 class Teacher(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), nullable=False)
-    teaching_code = db.Column(db.String(20), unique=True, nullable=False)
-    passcode = db.Column(db.String(10), nullable=False)
-    active = db.Column(db.Boolean, default=True)
-    authorised = db.Column(db.Boolean, default=False)
+    id            = db.Column(db.Integer, primary_key=True)
+    school_id     = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=False)
+    name          = db.Column(db.String(120), nullable=False)
+    teaching_code = db.Column(db.String(20), nullable=False)
+    passcode      = db.Column(db.String(20), nullable=False)
+    active        = db.Column(db.Boolean, default=True)
+    authorised    = db.Column(db.Boolean, default=False)
+    school        = db.relationship('School', backref='teachers')
+
+class Route(db.Model):
+    id         = db.Column(db.Integer, primary_key=True)
+    school_id  = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=False)
+    name       = db.Column(db.String(100), nullable=False)
+    description= db.Column(db.String(200))
+    is_morning = db.Column(db.Boolean, default=False)
+    active     = db.Column(db.Boolean, default=True)
+    school     = db.relationship('School', backref='routes')
 
 class DutyAssignment(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+    id         = db.Column(db.Integer, primary_key=True)
+    school_id  = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=False)
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher.id'), nullable=False)
-    route_id = db.Column(db.Integer, db.ForeignKey('route.id'), nullable=False)
-    duty_date = db.Column(db.Date, nullable=False)
+    route_id   = db.Column(db.Integer, db.ForeignKey('route.id'), nullable=False)
+    duty_date  = db.Column(db.Date, nullable=False)
     is_morning = db.Column(db.Boolean, default=False)
-    status = db.Column(db.String(20), default='assigned')  # assigned, completed, absent
-    teacher = db.relationship('Teacher', backref='assignments')
-    route = db.relationship('Route', backref='assignments')
+    status     = db.Column(db.String(20), default='assigned')
+    teacher    = db.relationship('Teacher', backref='assignments')
+    route      = db.relationship('Route', backref='assignments')
+
+class Payment(db.Model):
+    id          = db.Column(db.Integer, primary_key=True)
+    school_id   = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=False)
+    mpesa_code  = db.Column(db.String(20), nullable=False)
+    amount      = db.Column(db.Integer, nullable=False)
+    plan        = db.Column(db.String(20), nullable=False)
+    phone       = db.Column(db.String(20))
+    status      = db.Column(db.String(20), default='pending')  # pending/verified/rejected
+    submitted_at= db.Column(db.DateTime, default=datetime.utcnow)
+    verified_at = db.Column(db.DateTime)
+    school      = db.relationship('School', backref='payments')
+
+class SuperAdmin(db.Model):
+    id            = db.Column(db.Integer, primary_key=True)
+    username      = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+
+    def set_password(self, pw): self.password_hash = generate_password_hash(pw)
+    def check_password(self, pw): return check_password_hash(self.password_hash, pw)
 
 class AuditLog(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    user_type = db.Column(db.String(20))   # admin / teacher
-    user_id = db.Column(db.Integer)
-    user_name = db.Column(db.String(120))
-    action = db.Column(db.String(200))
-    ip_address = db.Column(db.String(50))
+    id         = db.Column(db.Integer, primary_key=True)
+    school_id  = db.Column(db.Integer, nullable=True)
+    timestamp  = db.Column(db.DateTime, default=datetime.utcnow)
+    user_type  = db.Column(db.String(20))
+    user_name  = db.Column(db.String(120))
+    action     = db.Column(db.String(300))
+    ip         = db.Column(db.String(50))
 
-# ─────────────────────────────────────────
+class PlatformSettings(db.Model):
+    id           = db.Column(db.Integer, primary_key=True)
+    mpesa_number = db.Column(db.String(20),  default='0753538323')
+    mpesa_name   = db.Column(db.String(100), default='KEVIN OGUTU')
+    platform_name= db.Column(db.String(200), default='School Transport System')
+    trial_days   = db.Column(db.Integer,     default=30)
+    updated_at   = db.Column(db.DateTime,    default=datetime.utcnow)
+
+# �"��"� GPS TRACKING MODELS �"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"�
+class Driver(db.Model):
+    id            = db.Column(db.Integer, primary_key=True)
+    school_id     = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=False)
+    name          = db.Column(db.String(120), nullable=False)
+    phone         = db.Column(db.String(20), nullable=False)
+    license_number= db.Column(db.String(50))
+    password_hash = db.Column(db.String(200), nullable=False)
+    active        = db.Column(db.Boolean, default=True)
+    # GPS tracking fields
+    current_latitude  = db.Column(db.Float, nullable=True)
+    current_longitude = db.Column(db.Float, nullable=True)
+    is_tracking       = db.Column(db.Boolean, default=False)
+    last_location_update = db.Column(db.DateTime, nullable=True)
+    # Assignment
+    assigned_route_id = db.Column(db.Integer, db.ForeignKey('route.id'), nullable=True)
+    created_at        = db.Column(db.DateTime, default=datetime.utcnow)
+    school            = db.relationship('School', backref='drivers')
+    assigned_route    = db.relationship('Route', backref='drivers')
+
+    def set_password(self, pw): self.password_hash = generate_password_hash(pw)
+    def check_password(self, pw): return check_password_hash(self.password_hash, pw)
+
+class Parent(db.Model):
+    id            = db.Column(db.Integer, primary_key=True)
+    school_id     = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=False)
+    name          = db.Column(db.String(120), nullable=False)
+    phone         = db.Column(db.String(20), nullable=False, unique=True)
+    password_hash = db.Column(db.String(200), nullable=False)
+    child_name    = db.Column(db.String(120))
+    child_class   = db.Column(db.String(50))
+    # Link parent to a specific route their child uses
+    assigned_route_id = db.Column(db.Integer, db.ForeignKey('route.id'), nullable=True)
+    active        = db.Column(db.Boolean, default=True)
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow)
+    school        = db.relationship('School', backref='parents')
+    assigned_route= db.relationship('Route', backref='parents')
+
+    def set_password(self, pw): self.password_hash = generate_password_hash(pw)
+    def check_password(self, pw): return check_password_hash(self.password_hash, pw)
+
+class LocationHistory(db.Model):
+    """Track GPS location history for analytics and playback"""
+    id        = db.Column(db.Integer, primary_key=True)
+    driver_id = db.Column(db.Integer, db.ForeignKey('driver.id'), nullable=False)
+    latitude  = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    speed     = db.Column(db.Float, nullable=True)  # km/h
+    driver    = db.relationship('Driver', backref='location_history')
+
+class PickupAlert(db.Model):
+    """Parent alerts driver they're ready for pickup/dropoff"""
+    id          = db.Column(db.Integer, primary_key=True)
+    parent_id   = db.Column(db.Integer, db.ForeignKey('parent.id'), nullable=False)
+    driver_id   = db.Column(db.Integer, db.ForeignKey('driver.id'), nullable=False)
+    route_id    = db.Column(db.Integer, db.ForeignKey('route.id'), nullable=False)
+    alert_type  = db.Column(db.String(20), nullable=False)  # 'pickup' or 'dropoff'
+    status      = db.Column(db.String(20), default='pending')  # pending/acknowledged/completed
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    acknowledged_at = db.Column(db.DateTime, nullable=True)
+    parent      = db.relationship('Parent', backref='pickup_alerts')
+    driver      = db.relationship('Driver', backref='pickup_alerts')
+    route       = db.relationship('Route', backref='pickup_alerts')
+
+
+
+# ════════════════════════════════════════
 # HELPERS
-# ─────────────────────────────────────────
-
-def log_action(user_type, user_id, user_name, action):
-    entry = AuditLog(
-        user_type=user_type,
-        user_id=user_id,
-        user_name=user_name,
-        action=action,
-        ip_address=request.remote_addr
-    )
-    db.session.add(entry)
+# ════════════════════════════════════════
+def log_action(school_id, user_type, user_name, action):
+    db.session.add(AuditLog(
+        school_id=school_id, user_type=user_type,
+        user_name=user_name, action=action,
+        ip=request.remote_addr))
     db.session.commit()
 
-def is_admin():
-    return session.get('admin_id') is not None
+def sanitize(v, ml=200):
+    if not v: return ''
+    return re.sub(r'[<>\\]', '', str(v).strip()[:ml])
 
 def get_settings():
-    s = Settings.query.first()
+    """Always returns the single PlatformSettings row, creating it if missing."""
+    s = PlatformSettings.query.first()
     if not s:
-        s = Settings()
+        s = PlatformSettings()
         db.session.add(s)
         db.session.commit()
     return s
 
-def is_weekend(d):
-    return d.weekday() >= 5  # 5=Sat, 6=Sun
+def is_super(): return session.get('super_id') is not None
+def is_school_admin(): return session.get('school_admin_id') is not None
+def current_school_id(): return session.get('school_id')
 
-def next_weekday(d):
-    d = d + timedelta(days=1)
-    while is_weekend(d):
-        d = d + timedelta(days=1)
-    return d
+def get_school_or_403():
+    sid = current_school_id()
+    if not sid: return None, (jsonify({'error':'Unauthorised'}), 403)
+    s = School.query.get(sid)
+    if not s:
+        return None, (jsonify({'error':'School not found'}), 404)
+    # Allow both active AND trial schools to use the app
+    if s.status == 'suspended':
+        return None, (jsonify({'error':'School account suspended. Contact support.'}), 403)
+    return s, None
 
-# ─────────────────────────────────────────
-# ALLOCATION ALGORITHM
-# ─────────────────────────────────────────
+def is_weekend(d): return d.weekday() >= 5
 
-def generate_roster(target_date):
-    """
-    Rules:
-    1. Skip weekends
-    2. Teacher who worked yesterday gets today off (1-day rest)
-    3. Each teacher rotates through ALL routes before repeating any
-    4. No teacher dominates a route
-    5. Morning routes only assigned if activated by admin
-    6. Evening routes only assigned if activated by admin
-    """
-    if is_weekend(target_date):
-        return []
-
-    settings = get_settings()
-    teachers = Teacher.query.filter_by(active=True, authorised=True).all()
-    routes = Route.query.filter_by(active=True).all()
-
-    morning_on = settings.morning_route_active
-    evening_on = getattr(settings, 'evening_route_active', False)
-
-    filtered_routes = []
-    for r in routes:
-        if r.is_morning and morning_on:
-            filtered_routes.append(r)
-        elif not r.is_morning and evening_on:
-            filtered_routes.append(r)
-    routes = filtered_routes
-
-    if not teachers or not routes:
-        return []
+# ── ALLOCATION ALGORITHM ────────────────
+def generate_roster(school_id, target_date):
+    if is_weekend(target_date): return []
+    school = School.query.get(school_id)
+    teachers = Teacher.query.filter_by(school_id=school_id, active=True, authorised=True).all()
+    all_routes = Route.query.filter_by(school_id=school_id, active=True).all()
+    routes = []
+    for r in all_routes:
+        if r.is_morning and school.morning_active: routes.append(r)
+        elif not r.is_morning and school.evening_active: routes.append(r)
+    if not teachers or not routes: return []
 
     yesterday = target_date - timedelta(days=1)
-    while is_weekend(yesterday):
-        yesterday = yesterday - timedelta(days=1)
-
-    # Teachers who worked yesterday → rest today
-    worked_yesterday = set(
-        a.teacher_id for a in DutyAssignment.query.filter_by(duty_date=yesterday).all()
-    )
-
-    available_today = [t for t in teachers if t.id not in worked_yesterday]
-
-    # If not enough available, pull from rested teachers (fallback)
-    if len(available_today) < len(routes):
-        rested = [t for t in teachers if t.id in worked_yesterday]
-        available_today += rested
+    while is_weekend(yesterday): yesterday -= timedelta(days=1)
+    worked_yesterday = {a.teacher_id for a in
+        DutyAssignment.query.filter_by(school_id=school_id, duty_date=yesterday).all()}
+    available = [t for t in teachers if t.id not in worked_yesterday] or teachers
 
     assignments = []
-    used_teachers = set()
-
+    used = set()
     for route in routes:
-        # Get route history to enforce rotation (no repeat until all done)
-        all_assigned_to_route = [
-            a.teacher_id for a in DutyAssignment.query
-            .filter_by(route_id=route.id)
-            .order_by(DutyAssignment.duty_date.desc())
-            .all()
-        ]
-
-        # Find teacher eligible for this route
+        history = [a.teacher_id for a in
+            DutyAssignment.query.filter_by(school_id=school_id, route_id=route.id)
+            .order_by(DutyAssignment.duty_date.desc()).all()]
         best = None
-        for teacher in available_today:
-            if teacher.id in used_teachers:
-                continue
-
-            # Check rotation: teacher should not repeat route until all routes covered
-            teacher_route_history = [
-                a.route_id for a in DutyAssignment.query
-                .filter_by(teacher_id=teacher.id)
-                .order_by(DutyAssignment.duty_date.desc())
-                .all()
-            ]
-
-            total_routes = len(routes)
-            recent_routes = teacher_route_history[:total_routes]
-
-            # If teacher has done this route recently without covering others, skip
-            if route.id in recent_routes and len(set(recent_routes)) < total_routes:
-                continue
-
-            # Prefer teacher who has done this route least
-            if best is None:
-                best = teacher
-            else:
-                best_count = all_assigned_to_route.count(best.id)
-                this_count = all_assigned_to_route.count(teacher.id)
-                if this_count < best_count:
-                    best = teacher
-
-        # If rotation filter left no one, pick least frequent on this route
+        for t in available:
+            if t.id in used: continue
+            tr_hist = [a.route_id for a in
+                DutyAssignment.query.filter_by(school_id=school_id, teacher_id=t.id)
+                .order_by(DutyAssignment.duty_date.desc()).all()]
+            recent = tr_hist[:len(routes)]
+            if route.id in recent and len(set(recent)) < len(routes): continue
+            if best is None or history.count(t.id) < history.count(best.id):
+                best = t
         if best is None:
-            candidates = [t for t in available_today if t.id not in used_teachers]
-            if candidates:
-                best = min(
-                    candidates,
-                    key=lambda t: all_assigned_to_route.count(t.id)
-                )
-
+            cands = [t for t in available if t.id not in used]
+            if cands:
+                best = min(cands, key=lambda t: history.count(t.id))
         if best:
-            used_teachers.add(best.id)
+            used.add(best.id)
             assignments.append({
-                'teacher_id': best.id,
-                'teacher_name': best.name,
+                'teacher_id': best.id, 'teacher_name': best.name,
                 'teaching_code': best.teaching_code,
-                'route_id': route.id,
-                'route_name': route.name,
+                'route_id': route.id, 'route_name': route.name,
                 'is_morning': route.is_morning,
                 'duty_date': target_date.isoformat()
             })
-
     return assignments
 
-def save_roster(assignments, target_date):
-    # Remove existing for that date
-    DutyAssignment.query.filter_by(duty_date=target_date).delete()
+def save_roster(school_id, assignments, target_date):
+    DutyAssignment.query.filter_by(school_id=school_id, duty_date=target_date).delete()
     for a in assignments:
-        entry = DutyAssignment(
-            teacher_id=a['teacher_id'],
-            route_id=a['route_id'],
-            duty_date=target_date,
-            is_morning=a['is_morning'],
-            status='assigned'
-        )
-        db.session.add(entry)
+        db.session.add(DutyAssignment(
+            school_id=school_id, teacher_id=a['teacher_id'],
+            route_id=a['route_id'], duty_date=target_date,
+            is_morning=a['is_morning'], status='assigned'))
     db.session.commit()
 
-def get_replacement_suggestions(absent_teacher_id, route_id, duty_date):
-    """Find available teachers not on duty that day, sorted by route fairness."""
-    on_duty_today = set(
-        a.teacher_id for a in DutyAssignment.query.filter_by(duty_date=duty_date).all()
-    )
-    on_duty_today.discard(absent_teacher_id)
-
-    all_teachers = Teacher.query.filter_by(active=True, authorised=True).all()
-    candidates = [t for t in all_teachers if t.id not in on_duty_today]
-
-    route_history = [
-        a.teacher_id for a in DutyAssignment.query.filter_by(route_id=route_id).all()
-    ]
-    candidates.sort(key=lambda t: route_history.count(t.id))
-    return [{'id': t.id, 'name': t.name, 'teaching_code': t.teaching_code} for t in candidates]
-
-# ─────────────────────────────────────────
-# ROUTES – PAGES
-# ─────────────────────────────────────────
-
+# ════════════════════════════════════════
+# PAGES
+# ════════════════════════════════════════
 @app.route('/')
 def index():
     return render_template('index.html')
 
+@app.route('/super')
+def super_panel():
+    if not is_super(): return redirect('/')
+    return render_template('super.html')
+
 @app.route('/admin')
 def admin_panel():
-    if not is_admin():
-        return redirect(url_for('index'))
+    if not is_school_admin(): return redirect('/')
     return render_template('admin.html')
 
 @app.route('/teacher')
 def teacher_panel():
-    if not session.get('teacher_id'):
-        return redirect(url_for('index'))
+    if not session.get('teacher_id'): return redirect('/')
     return render_template('teacher.html')
 
-# ─────────────────────────────────────────
+@app.route('/register')
+def register_page():
+    return render_template('register.html')
+
+@app.route('/payment')
+def payment_page():
+    if not is_school_admin(): return redirect('/')
+    return render_template('payment.html')
+
+@app.route('/driver')
+def driver_panel():
+    if not session.get('driver_id'): return redirect('/')
+    return render_template('driver.html')
+
+@app.route('/parent')
+def parent_panel():
+    if not session.get('parent_id'): return redirect('/')
+    return render_template('parent.html')
+
+# ════════════════════════════════════════
 # AUTH APIs
-# ─────────────────────────────────────────
+# ════════════════════════════════════════
+@app.route('/api/super/login', methods=['POST'])
+def super_login():
+    data = request.get_json()
+    sa = SuperAdmin.query.filter_by(username=sanitize(data.get('username',''))).first()
+    if sa and sa.check_password(data.get('password','')):
+        session['super_id'] = sa.id
+        session['super_name'] = sa.username
+        log_action(None, 'super', sa.username, 'Super admin login')
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
 
 @app.route('/api/admin/login', methods=['POST'])
 def admin_login():
-    ip = request.remote_addr
-    if not check_rate_limit(ip):
-        return jsonify({'success': False, 'message': 'Too many attempts. Try again in 5 minutes.'}), 429
     data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'message': 'Invalid request'}), 400
-    username = sanitize(data.get('username', ''))
-    password = data.get('password', '')
-    if not username or not password:
-        return jsonify({'success': False, 'message': 'Missing credentials'}), 400
-    admin = Admin.query.filter_by(username=username).first()
+    username = sanitize(data.get('username',''))
+    password = data.get('password','')
+    admin = SchoolAdmin.query.filter_by(username=username).first()
     if admin and admin.check_password(password):
-        session['admin_id'] = admin.id
-        session['admin_name'] = admin.username
+        school = School.query.get(admin.school_id)
+        if school.status == 'suspended':
+            return jsonify({'success': False,
+                'message': 'School account suspended. Contact support.'}), 403
+        session['school_admin_id'] = admin.id
+        session['school_id'] = admin.school_id
+        session['school_name'] = school.name
         session['admin_role'] = admin.role
-        log_action('admin', admin.id, admin.username, 'Admin login')
-        return jsonify({'success': True, 'role': admin.role, 'username': admin.username})
+        log_action(school.id, 'admin', username, 'Admin login')
+        return jsonify({'success': True, 'school': school.name,
+                        'role': admin.role, 'days_left': school.days_remaining()})
     return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
 
 @app.route('/api/teacher/login', methods=['POST'])
 def teacher_login():
-    ip = request.remote_addr
-    if not check_rate_limit(ip):
-        return jsonify({'success': False, 'message': 'Too many attempts. Try again in 5 minutes.'}), 429
     data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'message': 'Invalid request'}), 400
-    teaching_code = sanitize(data.get('teaching_code', ''))
-    passcode = sanitize(data.get('passcode', ''))
-    if not teaching_code or not passcode:
-        return jsonify({'success': False, 'message': 'Missing credentials'}), 400
+    code = sanitize(data.get('teaching_code',''))
+    passcode = sanitize(data.get('passcode',''))
+    school_code = sanitize(data.get('school_code',''))
+    school = School.query.filter_by(code=school_code).first()
+    if not school or school.status == 'suspended':
+        return jsonify({'success': False, 'message': 'School not found or suspended'}), 401
     teacher = Teacher.query.filter_by(
-        teaching_code=teaching_code,
-        passcode=passcode,
-        authorised=True,
-        active=True
-    ).first()
+        school_id=school.id, teaching_code=code,
+        passcode=passcode, authorised=True, active=True).first()
     if teacher:
         session['teacher_id'] = teacher.id
         session['teacher_name'] = teacher.name
-        log_action('teacher', teacher.id, teacher.name, 'Teacher login')
-        return jsonify({'success': True, 'name': teacher.name, 'id': teacher.id})
+        session['school_id'] = school.id
+        session['school_name'] = school.name
+        log_action(school.id, 'teacher', teacher.name, 'Teacher login')
+        return jsonify({'success': True, 'name': teacher.name, 'school': school.name})
     return jsonify({'success': False, 'message': 'Invalid code or not authorised'}), 401
 
 @app.route('/api/logout', methods=['POST'])
 def logout():
-    user_type = 'teacher' if session.get('teacher_id') else 'admin'
-    uid = session.get('teacher_id') or session.get('admin_id')
-    uname = session.get('teacher_name') or session.get('admin_name', '')
-    log_action(user_type, uid, uname, f'{user_type.capitalize()} logout')
     session.clear()
     return jsonify({'success': True})
 
-@app.route('/api/session', methods=['GET'])
+@app.route('/api/session')
 def check_session():
-    if session.get('admin_id'):
-        return jsonify({'type': 'admin', 'id': session['admin_id'], 'name': session.get('admin_name'), 'role': session.get('admin_role')})
+    if session.get('super_id'):
+        return jsonify({'type': 'super', 'name': session.get('super_name')})
+    if session.get('school_admin_id'):
+        return jsonify({'type': 'admin', 'school': session.get('school_name'),
+                        'role': session.get('admin_role'),
+                        'school_id': session.get('school_id')})
     if session.get('teacher_id'):
-        return jsonify({'type': 'teacher', 'id': session['teacher_id'], 'name': session.get('teacher_name')})
+        return jsonify({'type': 'teacher', 'name': session.get('teacher_name'),
+                        'school': session.get('school_name'),
+                        'school_id': session.get('school_id')})
+    if session.get('driver_id'):
+        return jsonify({'type': 'driver', 'name': session.get('driver_name'),
+                        'school': session.get('school_name'),
+                        'school_id': session.get('school_id')})
+    if session.get('parent_id'):
+        return jsonify({'type': 'parent', 'name': session.get('parent_name'),
+                        'school': session.get('school_name'),
+                        'school_id': session.get('school_id')})
     return jsonify({'type': None})
 
-# ─────────────────────────────────────────
-# SETTINGS APIs
-# ─────────────────────────────────────────
+# ����������������������������������������
+# DRIVER & PARENT AUTH + GPS TRACKING APIs
+# ����������������������������������������
 
-@app.route('/api/settings', methods=['GET'])
-def get_settings_api():
-    s = get_settings()
-    return jsonify({
-        'school_name': s.school_name,
-        'morning_route_active': s.morning_route_active,
-        'evening_route_active': getattr(s, 'evening_route_active', False),
-        'public_link': s.public_link or '',
-        'link_label': s.link_label or 'Weekly School Transport Link'
-    })
+@app.route('/api/driver/login', methods=['POST'])
+def driver_login():
+    data = request.get_json()
+    phone = sanitize(data.get('phone',''))
+    password = data.get('password','')
+    school_code = sanitize(data.get('school_code',''))
+    
+    school = School.query.filter_by(code=school_code).first()
+    if not school or school.status == 'suspended':
+        return jsonify({'success': False, 'message': 'School not found or suspended'}), 401
+    
+    driver = Driver.query.filter_by(school_id=school.id, phone=phone, active=True).first()
+    if driver and driver.check_password(password):
+        session['driver_id'] = driver.id
+        session['driver_name'] = driver.name
+        session['school_id'] = school.id
+        session['school_name'] = school.name
+        log_action(school.id, 'driver', driver.name, 'Driver login')
+        return jsonify({'success': True, 'name': driver.name, 'school': school.name,
+                        'route_id': driver.assigned_route_id,
+                        'is_tracking': driver.is_tracking})
+    return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
 
-@app.route('/api/settings', methods=['PUT'])
-def update_settings():
-    if not is_admin():
+@app.route('/api/parent/login', methods=['POST'])
+def parent_login():
+    data = request.get_json()
+    phone = sanitize(data.get('phone',''))
+    password = data.get('password','')
+    school_code = sanitize(data.get('school_code',''))
+    
+    school = School.query.filter_by(code=school_code).first()
+    if not school or school.status == 'suspended':
+        return jsonify({'success': False, 'message': 'School not found or suspended'}), 401
+    
+    parent = Parent.query.filter_by(school_id=school.id, phone=phone, active=True).first()
+    if parent and parent.check_password(password):
+        session['parent_id'] = parent.id
+        session['parent_name'] = parent.name
+        session['school_id'] = school.id
+        session['school_name'] = school.name
+        log_action(school.id, 'parent', parent.name, 'Parent login')
+        return jsonify({'success': True, 'name': parent.name, 'school': school.name,
+                        'child_name': parent.child_name, 'route_id': parent.assigned_route_id})
+    return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+
+@app.route('/api/driver/start-tracking', methods=['POST'])
+def driver_start_tracking():
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    driver = Driver.query.get(session['driver_id'])
+    driver.is_tracking = True
+    db.session.commit()
+    log_action(session['school_id'], 'driver', session['driver_name'], 'Started GPS tracking')
+    return jsonify({'success': True, 'message': 'GPS tracking started'})
+
+@app.route('/api/driver/stop-tracking', methods=['POST'])
+def driver_stop_tracking():
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    driver = Driver.query.get(session['driver_id'])
+    driver.is_tracking = False
+    driver.current_latitude = None
+    driver.current_longitude = None
+    db.session.commit()
+    log_action(session['school_id'], 'driver', session['driver_name'], 'Stopped GPS tracking')
+    return jsonify({'success': True, 'message': 'GPS tracking stopped'})
+
+@app.route('/api/driver/update-location', methods=['POST'])
+def driver_update_location():
+    if not session.get('driver_id'):
         return jsonify({'error': 'Unauthorised'}), 403
     data = request.get_json()
-    s = get_settings()
-    if 'school_name' in data:
-        s.school_name = sanitize(data['school_name'])
-    if 'morning_route_active' in data:
-        s.morning_route_active = bool(data['morning_route_active'])
-    if 'evening_route_active' in data:
-        s.evening_route_active = bool(data['evening_route_active'])
-    if 'public_link' in data:
-        s.public_link = data['public_link'].strip()
-    if 'link_label' in data:
-        s.link_label = sanitize(data['link_label'])
+    latitude = float(data.get('latitude', 0))
+    longitude = float(data.get('longitude', 0))
+    speed = data.get('speed')  # Optional
+    
+    if not latitude or not longitude:
+        return jsonify({'error': 'Latitude and longitude required'}), 400
+    
+    driver = Driver.query.get(session['driver_id'])
+    driver.current_latitude = latitude
+    driver.current_longitude = longitude
+    driver.last_location_update = datetime.utcnow()
+    
+    # Save to history for route playback
+    history = LocationHistory(
+        driver_id=driver.id,
+        latitude=latitude,
+        longitude=longitude,
+        speed=speed
+    )
+    db.session.add(history)
     db.session.commit()
-    log_action('admin', session['admin_id'], session.get('admin_name'), f'Settings updated')
+    
     return jsonify({'success': True})
 
-# ─────────────────────────────────────────
-# TEACHER APIs
-# ─────────────────────────────────────────
+@app.route('/api/parent/track-bus')
+def parent_track_bus():
+    if not session.get('parent_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    
+    parent = Parent.query.get(session['parent_id'])
+    if not parent.assigned_route_id:
+        return jsonify({'error': 'No route assigned to your child'}), 400
+    
+    # Find active driver on this route
+    driver = Driver.query.filter_by(
+        school_id=parent.school_id,
+        assigned_route_id=parent.assigned_route_id,
+        active=True
+    ).first()
+    
+    # Find today's teacher assignment
+    today = date.today()
+    assignment = DutyAssignment.query.filter_by(
+        school_id=parent.school_id,
+        route_id=parent.assigned_route_id,
+        duty_date=today
+    ).first()
+    
+    teacher_info = None
+    if assignment:
+        teacher = Teacher.query.get(assignment.teacher_id)
+        if teacher:
+            teacher_info = {
+                'name': teacher.name,
+                'teaching_code': teacher.teaching_code
+            }
+    
+    route = Route.query.get(parent.assigned_route_id)
+    
+    response = {
+        'route_name': route.name,
+        'route_type': 'Morning' if route.is_morning else 'Evening',
+        'driver': {
+            'name': driver.name if driver else 'Not assigned',
+            'phone': driver.phone if driver else None,
+            'is_tracking': driver.is_tracking if driver else False
+        },
+        'teacher': teacher_info,
+        'tracking': False
+    }
+    
+    if driver and driver.is_tracking and driver.current_latitude:
+        response['tracking'] = True
+        response['latitude'] = driver.current_latitude
+        response['longitude'] = driver.current_longitude
+        response['last_update'] = driver.last_location_update.isoformat() if driver.last_location_update else None
+    
+    return jsonify(response)
 
+@app.route('/api/parent/alert-driver', methods=['POST'])
+def parent_alert_driver():
+    """Parent notifies driver they're ready at pickup/dropoff point"""
+    if not session.get('parent_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    
+    data = request.get_json()
+    alert_type = data.get('alert_type', 'pickup')  # pickup or dropoff
+    
+    parent = Parent.query.get(session['parent_id'])
+    if not parent.assigned_route_id:
+        return jsonify({'error': 'No route assigned'}), 400
+    
+    driver = Driver.query.filter_by(
+        school_id=parent.school_id,
+        assigned_route_id=parent.assigned_route_id,
+        active=True
+    ).first()
+    
+    if not driver:
+        return jsonify({'error': 'No driver assigned to this route'}), 400
+    
+    # Create alert
+    alert = PickupAlert(
+        parent_id=parent.id,
+        driver_id=driver.id,
+        route_id=parent.assigned_route_id,
+        alert_type=alert_type,
+        status='pending'
+    )
+    db.session.add(alert)
+    db.session.commit()
+    
+    log_action(parent.school_id, 'parent', parent.name, 
+               f'Sent {alert_type} alert to driver {driver.name}')
+    
+    return jsonify({
+        'success': True,
+        'message': f'Alert sent to driver {driver.name}',
+        'alert_id': alert.id
+    })
+
+@app.route('/api/driver/alerts')
+def driver_get_alerts():
+    """Get pending alerts for driver"""
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    
+    driver_id = session['driver_id']
+    alerts = PickupAlert.query.filter_by(
+        driver_id=driver_id,
+        status='pending'
+    ).order_by(PickupAlert.created_at.desc()).all()
+    
+    return jsonify([{
+        'id': a.id,
+        'parent_name': a.parent.name,
+        'parent_phone': a.parent.phone,
+        'child_name': a.parent.child_name,
+        'child_class': a.parent.child_class,
+        'alert_type': a.alert_type,
+        'time_ago': (datetime.utcnow() - a.created_at).seconds // 60,  # minutes ago
+        'created_at': a.created_at.isoformat()
+    } for a in alerts])
+
+@app.route('/api/driver/alert/<int:alert_id>/acknowledge', methods=['POST'])
+def driver_acknowledge_alert(alert_id):
+    """Driver acknowledges they saw the alert"""
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    
+    alert = PickupAlert.query.filter_by(
+        id=alert_id,
+        driver_id=session['driver_id']
+    ).first_or_404()
+    
+    alert.status = 'acknowledged'
+    alert.acknowledged_at = datetime.utcnow()
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+@app.route('/api/driver/notify-parent', methods=['POST'])
+def driver_notify_parent():
+    """Driver sends notification to specific parent (for calling or SMS)"""
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    
+    data = request.get_json()
+    parent_phone = data.get('parent_phone')
+    message_type = data.get('message_type', 'call')  # 'call' or 'sms'
+    
+    driver = Driver.query.get(session['driver_id'])
+    parent = Parent.query.filter_by(
+        school_id=driver.school_id,
+        phone=parent_phone
+    ).first()
+    
+    if not parent:
+        return jsonify({'error': 'Parent not found'}), 404
+    
+    # Log the notification attempt
+    log_action(driver.school_id, 'driver', driver.name,
+               f'{message_type.upper()} notification to parent {parent.name} ({parent_phone})')
+    
+    return jsonify({
+        'success': True,
+        'parent_name': parent.name,
+        'parent_phone': parent.phone,
+        'child_name': parent.child_name,
+        'action': message_type
+    })
+
+@app.route('/api/driver/route-info')
+def driver_route_info():
+    """Get driver's assigned route, today's teacher, and parent list"""
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    
+    driver = Driver.query.get(session['driver_id'])
+    if not driver.assigned_route_id:
+        return jsonify({'error': 'No route assigned'}), 400
+    
+    route = Route.query.get(driver.assigned_route_id)
+    
+    # Get today's teacher
+    today = date.today()
+    assignment = DutyAssignment.query.filter_by(
+        school_id=driver.school_id,
+        route_id=driver.assigned_route_id,
+        duty_date=today
+    ).first()
+    
+    teacher_info = None
+    if assignment:
+        teacher = Teacher.query.get(assignment.teacher_id)
+        if teacher:
+            teacher_info = {
+                'name': teacher.name,
+                'teaching_code': teacher.teaching_code
+            }
+    
+    # Get all parents on this route
+    parents = Parent.query.filter_by(
+        school_id=driver.school_id,
+        assigned_route_id=driver.assigned_route_id,
+        active=True
+    ).all()
+    
+    return jsonify({
+        'route': {
+            'id': route.id,
+            'name': route.name,
+            'description': route.description,
+            'type': 'Morning' if route.is_morning else 'Evening'
+        },
+        'teacher': teacher_info,
+        'parents': [{
+            'name': p.name,
+            'phone': p.phone,
+            'child_name': p.child_name,
+            'child_class': p.child_class
+        } for p in parents],
+        'parent_count': len(parents)
+    })
+
+@app.route('/api/admin/drivers')
+def admin_drivers():
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    drivers = Driver.query.filter_by(school_id=current_school_id()).all()
+    return jsonify([{
+        'id': d.id,
+        'name': d.name,
+        'phone': d.phone,
+        'license': d.license_number,
+        'active': d.active,
+        'assigned_route_id': d.assigned_route_id,
+        'assigned_route_name': d.assigned_route.name if d.assigned_route else None,
+        'is_tracking': d.is_tracking,
+        'latitude': d.current_latitude,
+        'longitude': d.current_longitude,
+        'last_location_update': d.last_location_update.isoformat() if d.last_location_update else None
+    } for d in drivers])
+
+@app.route('/api/admin/driver/create', methods=['POST'])
+def admin_create_driver():
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    data = request.get_json()
+    name = sanitize(data.get('name',''))
+    phone = sanitize(data.get('phone',''))
+    license = sanitize(data.get('license',''))
+    password = data.get('password','')
+    route_id = data.get('route_id')
+    
+    if not all([name, phone, password]):
+        return jsonify({'error': 'Name, phone, and password required'}), 400
+    
+    driver = Driver(
+        school_id=current_school_id(),
+        name=name,
+        phone=phone,
+        license_number=license,
+        assigned_route_id=route_id if route_id else None
+    )
+    driver.set_password(password)
+    db.session.add(driver)
+    db.session.commit()
+    log_action(current_school_id(), 'admin', session['school_name'], f'Created driver: {name}')
+    return jsonify({'success': True, 'driver_id': driver.id})
+
+@app.route('/api/admin/driver/<int:did>/edit', methods=['PUT'])
+def admin_edit_driver(did):
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    driver = Driver.query.filter_by(id=did, school_id=current_school_id()).first_or_404()
+    data = request.get_json()
+    
+    if 'name' in data: driver.name = sanitize(data['name'])
+    if 'phone' in data: driver.phone = sanitize(data['phone'])
+    if 'license' in data: driver.license_number = sanitize(data['license'])
+    if 'active' in data: driver.active = bool(data['active'])
+    if 'assigned_route_id' in data: driver.assigned_route_id = data['assigned_route_id']
+    if 'password' in data and data['password']:
+        driver.set_password(data['password'])
+    
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/driver/<int:did>/delete', methods=['DELETE'])
+def admin_delete_driver(did):
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    driver = Driver.query.filter_by(id=did, school_id=current_school_id()).first_or_404()
+    LocationHistory.query.filter_by(driver_id=driver.id).delete()
+    db.session.delete(driver)
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/parents')
+def admin_parents():
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    parents = Parent.query.filter_by(school_id=current_school_id()).all()
+    return jsonify([{
+        'id': p.id,
+        'name': p.name,
+        'phone': p.phone,
+        'child_name': p.child_name,
+        'child_class': p.child_class,
+        'assigned_route_id': p.assigned_route_id,
+        'assigned_route_name': p.assigned_route.name if p.assigned_route else None,
+        'active': p.active
+    } for p in parents])
+
+@app.route('/api/admin/parent/create', methods=['POST'])
+def admin_create_parent():
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    data = request.get_json()
+    name = sanitize(data.get('name',''))
+    phone = sanitize(data.get('phone',''))
+    password = data.get('password','')
+    child_name = sanitize(data.get('child_name',''))
+    child_class = sanitize(data.get('child_class',''))
+    route_id = data.get('route_id')
+    
+    if not all([name, phone, password]):
+        return jsonify({'error': 'Name, phone, and password required'}), 400
+    if Parent.query.filter_by(phone=phone).first():
+        return jsonify({'error': 'Phone number already registered'}), 400
+    
+    parent = Parent(
+        school_id=current_school_id(),
+        name=name,
+        phone=phone,
+        child_name=child_name,
+        child_class=child_class,
+        assigned_route_id=route_id if route_id else None
+    )
+    parent.set_password(password)
+    db.session.add(parent)
+    db.session.commit()
+    log_action(current_school_id(), 'admin', session['school_name'], f'Created parent: {name}')
+    return jsonify({'success': True, 'parent_id': parent.id})
+
+@app.route('/api/admin/parent/<int:pid>/edit', methods=['PUT'])
+def admin_edit_parent(pid):
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    parent = Parent.query.filter_by(id=pid, school_id=current_school_id()).first_or_404()
+    data = request.get_json()
+    
+    if 'name' in data: parent.name = sanitize(data['name'])
+    if 'phone' in data: parent.phone = sanitize(data['phone'])
+    if 'child_name' in data: parent.child_name = sanitize(data['child_name'])
+    if 'child_class' in data: parent.child_class = sanitize(data['child_class'])
+    if 'active' in data: parent.active = bool(data['active'])
+    if 'assigned_route_id' in data: parent.assigned_route_id = data['assigned_route_id']
+    if 'password' in data and data['password']:
+        parent.set_password(data['password'])
+    
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/parent/<int:pid>/delete', methods=['DELETE'])
+def admin_delete_parent(pid):
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    parent = Parent.query.filter_by(id=pid, school_id=current_school_id()).first_or_404()
+    db.session.delete(parent)
+    db.session.commit()
+    return jsonify({'success': True})
+
+# ── Driver: add parent to their route ──────────────────────────────
+@app.route('/api/driver/add-parent', methods=['POST'])
+def driver_add_parent():
+    if not session.get('driver_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    driver = Driver.query.get(session['driver_id'])
+    data = request.get_json()
+    name       = sanitize(data.get('name', ''))
+    phone      = sanitize(data.get('phone', ''))
+    password   = data.get('password', '')
+    child_name = sanitize(data.get('child_name', ''))
+    child_class= sanitize(data.get('child_class', ''))
+
+    if not all([name, phone, password]):
+        return jsonify({'error': 'Name, phone and password are required'}), 400
+    if Parent.query.filter_by(phone=phone).first():
+        return jsonify({'error': 'Phone number already registered'}), 400
+
+    parent = Parent(
+        school_id=driver.school_id,
+        name=name, phone=phone,
+        child_name=child_name, child_class=child_class,
+        assigned_route_id=driver.assigned_route_id
+    )
+    parent.set_password(password)
+    db.session.add(parent)
+    db.session.commit()
+    log_action(driver.school_id, 'driver', session['driver_name'],
+               f'Added parent {name} ({phone}) to route')
+    return jsonify({'success': True, 'parent_id': parent.id,
+                    'message': f'Parent {name} added successfully'})
+
+# ── Teacher: add parent to their assigned route ─────────────────────
+@app.route('/api/teacher/add-parent', methods=['POST'])
+def teacher_add_parent():
+    if not session.get('teacher_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    teacher = Teacher.query.get(session['teacher_id'])
+    data = request.get_json()
+    name       = sanitize(data.get('name', ''))
+    phone      = sanitize(data.get('phone', ''))
+    password   = data.get('password', '')
+    child_name = sanitize(data.get('child_name', ''))
+    child_class= sanitize(data.get('child_class', ''))
+    route_id   = data.get('route_id')
+
+    if not all([name, phone, password]):
+        return jsonify({'error': 'Name, phone and password are required'}), 400
+    if Parent.query.filter_by(phone=phone).first():
+        return jsonify({'error': 'Phone number already registered'}), 400
+
+    parent = Parent(
+        school_id=teacher.school_id,
+        name=name, phone=phone,
+        child_name=child_name, child_class=child_class,
+        assigned_route_id=route_id if route_id else None
+    )
+    parent.set_password(password)
+    db.session.add(parent)
+    db.session.commit()
+    log_action(teacher.school_id, 'teacher', session['teacher_name'],
+               f'Added parent {name} ({phone})')
+    return jsonify({'success': True, 'parent_id': parent.id,
+                    'message': f'Parent {name} added successfully'})
+
+# ── Parent self-registration via school code ────────────────────────
+@app.route('/api/parent/register', methods=['POST'])
+def parent_register():
+    data = request.get_json()
+    school_code = sanitize(data.get('school_code', '').upper())
+    name        = sanitize(data.get('name', ''))
+    phone       = sanitize(data.get('phone', ''))
+    password    = data.get('password', '')
+    child_name  = sanitize(data.get('child_name', ''))
+    child_class = sanitize(data.get('child_class', ''))
+
+    if not all([school_code, name, phone, password]):
+        return jsonify({'error': 'All fields required'}), 400
+
+    school = School.query.filter_by(code=school_code).first()
+    if not school:
+        return jsonify({'error': 'School code not found'}), 404
+
+    if Parent.query.filter_by(phone=phone).first():
+        return jsonify({'error': 'Phone number already registered'}), 400
+
+    parent = Parent(
+        school_id=school.id,
+        name=name, phone=phone,
+        child_name=child_name, child_class=child_class
+    )
+    parent.set_password(password)
+    db.session.add(parent)
+    db.session.commit()
+    log_action(school.id, 'system', 'self-register',
+               f'Parent {name} self-registered')
+    return jsonify({'success': True,
+                    'message': 'Registered! Ask your school admin to assign your route.'})
+
+# ════════════════════════════════════════
+# SCHOOL REGISTRATION
+# ════════════════════════════════════════
+@app.route('/api/register', methods=['POST'])
+def register_school():
+    data = request.get_json()
+    name   = sanitize(data.get('name',''))
+    code   = sanitize(data.get('code','').upper())
+    email  = sanitize(data.get('email',''))
+    phone  = sanitize(data.get('phone',''))
+    county = sanitize(data.get('county',''))
+    admin_username = sanitize(data.get('admin_username',''))
+    admin_password = data.get('admin_password','')
+
+    if not all([name, code, admin_username, admin_password]):
+        return jsonify({'error': 'All fields required'}), 400
+    if School.query.filter_by(code=code).first():
+        return jsonify({'error': f'School code {code} already exists'}), 400
+
+    trial_end = date.today() + timedelta(days=TRIAL_DAYS)
+    school = School(name=name, code=code, email=email, phone=phone,
+                    county=county, plan='basic', status='trial',
+                    trial_start=date.today(), trial_end=trial_end)
+    db.session.add(school)
+    db.session.flush()
+
+    admin = SchoolAdmin(school_id=school.id, username=admin_username, role='coordinator')
+    admin.set_password(admin_password)
+    db.session.add(admin)
+    db.session.commit()
+    log_action(school.id, 'system', 'registration', f'School {name} registered')
+    return jsonify({'success': True, 'school_id': school.id,
+                    'trial_end': trial_end.isoformat(),
+                    'message': f'Welcome! Your 30-day free trial starts today.'})
+
+# ════════════════════════════════════════
+# PAYMENT APIs
+# ════════════════════════════════════════
+@app.route('/api/payment/info')
+def payment_info():
+    s = get_settings()
+    return jsonify({
+        'mpesa_number': s.mpesa_number,
+        'mpesa_name':   s.mpesa_name,
+        'plans': PLANS
+    })
+
+@app.route('/api/payment/submit', methods=['POST'])
+def submit_payment():
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    data = request.get_json()
+    mpesa_code = sanitize(data.get('mpesa_code','').upper())
+    amount     = int(data.get('amount', 0))
+    plan       = sanitize(data.get('plan','basic'))
+    phone      = sanitize(data.get('phone',''))
+
+    if not mpesa_code or not amount:
+        return jsonify({'error': 'M-Pesa code and amount required'}), 400
+    if Payment.query.filter_by(mpesa_code=mpesa_code).first():
+        return jsonify({'error': 'This M-Pesa code has already been submitted'}), 400
+
+    p = Payment(school_id=current_school_id(), mpesa_code=mpesa_code,
+                amount=amount, plan=plan, phone=phone, status='pending')
+    db.session.add(p)
+    db.session.commit()
+    log_action(current_school_id(), 'admin', session.get('school_name'),
+               f'Payment submitted: {mpesa_code} KES {amount} for {plan}')
+    return jsonify({'success': True,
+                    'message': 'Payment submitted. Super admin will verify within 24 hours.'})
+
+@app.route('/api/payment/status')
+def payment_status():
+    if not is_school_admin(): return jsonify({'error': 'Unauthorised'}), 403
+    payments = Payment.query.filter_by(school_id=current_school_id())\
+               .order_by(Payment.submitted_at.desc()).all()
+    school = School.query.get(current_school_id())
+    return jsonify({
+        'school_status': school.status,
+        'days_remaining': school.days_remaining(),
+        'plan': school.plan,
+        'payments': [{
+            'mpesa_code': p.mpesa_code, 'amount': p.amount,
+            'plan': p.plan, 'status': p.status,
+            'submitted_at': p.submitted_at.strftime('%Y-%m-%d %H:%M')
+        } for p in payments]
+    })
+
+# ════════════════════════════════════════
+# SUPER ADMIN APIs
+# ════════════════════════════════════════
+@app.route('/api/super/schools')
+def super_schools():
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    schools = School.query.order_by(School.created_at.desc()).all()
+    return jsonify([{
+        'id': s.id, 'name': s.name, 'code': s.code,
+        'plan': s.plan, 'status': s.status,
+        'days_remaining': s.days_remaining(),
+        'trial_end': s.trial_end.isoformat() if s.trial_end else None,
+        'subscription_end': s.subscription_end.isoformat() if s.subscription_end else None,
+        'phone': s.phone, 'county': s.county,
+        'teachers': Teacher.query.filter_by(school_id=s.id).count(),
+        'routes': Route.query.filter_by(school_id=s.id).count(),
+    } for s in schools])
+
+@app.route('/api/super/payments')
+def super_payments():
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    payments = Payment.query.order_by(Payment.submitted_at.desc()).all()
+    return jsonify([{
+        'id': p.id, 'school': p.school.name, 'school_id': p.school_id,
+        'mpesa_code': p.mpesa_code, 'amount': p.amount,
+        'plan': p.plan, 'phone': p.phone, 'status': p.status,
+        'submitted_at': p.submitted_at.strftime('%Y-%m-%d %H:%M')
+    } for p in payments])
+
+@app.route('/api/super/payment/<int:pid>/verify', methods=['POST'])
+def verify_payment(pid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    p = Payment.query.get_or_404(pid)
+    p.status = 'verified'
+    p.verified_at = datetime.utcnow()
+    # Activate school
+    school = School.query.get(p.school_id)
+    school.plan = p.plan
+    school.status = 'active'
+    today = date.today()
+    current_end = school.subscription_end or today
+    if current_end < today: current_end = today
+    school.subscription_end = current_end + timedelta(days=30)
+    db.session.commit()
+    log_action(None, 'super', session.get('super_name'),
+               f'Verified payment {p.mpesa_code} for {school.name} — activated {p.plan} until {school.subscription_end}')
+    return jsonify({'success': True,
+                    'message': f'{school.name} activated on {p.plan} plan until {school.subscription_end}'})
+
+@app.route('/api/super/payment/<int:pid>/reject', methods=['POST'])
+def reject_payment(pid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    p = Payment.query.get_or_404(pid)
+    p.status = 'rejected'
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/super/school/<int:sid>/suspend', methods=['POST'])
+def suspend_school(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    s = School.query.get_or_404(sid)
+    s.status = 'suspended'
+    db.session.commit()
+    log_action(None, 'super', session.get('super_name'), f'Suspended school: {s.name}')
+    return jsonify({'success': True})
+
+@app.route('/api/super/school/<int:sid>/activate', methods=['POST'])
+def activate_school(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    data = request.get_json() or {}
+    s = School.query.get_or_404(sid)
+    s.status = 'active'
+    days = int(data.get('days', 30))
+    s.subscription_end = date.today() + timedelta(days=days)
+    db.session.commit()
+    log_action(None, 'super', session.get('super_name'),
+               f'Manually activated: {s.name} for {days} days')
+    return jsonify({'success': True})
+
+@app.route('/api/super/school/create', methods=['POST'])
+def super_create_school():
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    data = request.get_json()
+    name           = sanitize(data.get('name',''))
+    code           = sanitize(data.get('code','').upper())
+    email          = sanitize(data.get('email',''))
+    phone          = sanitize(data.get('phone',''))
+    county         = sanitize(data.get('county',''))
+    plan           = sanitize(data.get('plan','basic'))
+    admin_username = sanitize(data.get('admin_username',''))
+    admin_password = data.get('admin_password','')
+    days           = int(data.get('days', 30))
+
+    if not all([name, code, admin_username, admin_password]):
+        return jsonify({'error': 'School name, code, admin username and password are required'}), 400
+    if School.query.filter_by(code=code).first():
+        return jsonify({'error': f'School code {code} already exists'}), 400
+    if len(admin_password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+
+    school = School(
+        name=name, code=code, email=email, phone=phone,
+        county=county, plan=plan, status='active',
+        trial_start=date.today(),
+        trial_end=date.today() + timedelta(days=TRIAL_DAYS),
+        subscription_end=date.today() + timedelta(days=days)
+    )
+    db.session.add(school)
+    db.session.flush()
+    admin = SchoolAdmin(school_id=school.id, username=admin_username, role='coordinator')
+    admin.set_password(admin_password)
+    db.session.add(admin)
+    db.session.commit()
+    log_action(None, 'super', session.get('super_name'),
+               f'Created school: {name} ({code}) on {plan} plan')
+    return jsonify({'success': True, 'school_id': school.id,
+                    'message': f'{name} created successfully on {plan} plan.'})
+
+@app.route('/api/super/school/<int:sid>/edit', methods=['PUT'])
+def super_edit_school(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    s = School.query.get_or_404(sid)
+    data = request.get_json()
+    if 'name'   in data: s.name   = sanitize(data['name'])
+    if 'email'  in data: s.email  = sanitize(data['email'])
+    if 'phone'  in data: s.phone  = sanitize(data['phone'])
+    if 'county' in data: s.county = sanitize(data['county'])
+    if 'plan'   in data: s.plan   = sanitize(data['plan'])
+    if 'status' in data: s.status = sanitize(data['status'])
+    if 'subscription_end' in data and data['subscription_end']:
+        try:
+            s.subscription_end = date.fromisoformat(data['subscription_end'])
+        except ValueError:
+            pass
+    db.session.commit()
+    log_action(None, 'super', session.get('super_name'), f'Edited school: {s.name}')
+    return jsonify({'success': True})
+
+@app.route('/api/super/school/<int:sid>/reset-password', methods=['POST'])
+def super_reset_admin_password(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    data = request.get_json()
+    new_password = data.get('password','')
+    if len(new_password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    admin = SchoolAdmin.query.filter_by(school_id=sid).first()
+    if not admin:
+        return jsonify({'error': 'No admin found for this school'}), 404
+    admin.set_password(new_password)
+    db.session.commit()
+    log_action(None, 'super', session.get('super_name'),
+               f'Reset admin password for school id {sid}')
+    return jsonify({'success': True, 'message': f'Password reset for {admin.username}'})
+
+@app.route('/api/super/school/<int:sid>/delete', methods=['DELETE'])
+def super_delete_school(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    s = School.query.get_or_404(sid)
+    name = s.name
+    # Delete all related records first
+    DutyAssignment.query.filter_by(school_id=sid).delete()
+    Payment.query.filter_by(school_id=sid).delete()
+    Route.query.filter_by(school_id=sid).delete()
+    Teacher.query.filter_by(school_id=sid).delete()
+    SchoolAdmin.query.filter_by(school_id=sid).delete()
+    AuditLog.query.filter_by(school_id=sid).delete()
+    db.session.delete(s)
+    db.session.commit()
+    log_action(None, 'super', session.get('super_name'), f'Deleted school: {name}')
+    return jsonify({'success': True})
+
+@app.route('/api/super/stats')
+def super_stats():
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    schools = School.query.all()
+    payments = Payment.query.filter_by(status='verified').all()
+    pending = Payment.query.filter_by(status='pending').count()
+    revenue = sum(p.amount for p in payments)
+    return jsonify({
+        'total_schools': len(schools),
+        'active': sum(1 for s in schools if s.status == 'active'),
+        'trial': sum(1 for s in schools if s.status == 'trial'),
+        'expired': sum(1 for s in schools if s.status == 'expired'),
+        'suspended': sum(1 for s in schools if s.status == 'suspended'),
+        'total_revenue': revenue,
+        'pending_payments': pending,
+        'total_teachers': Teacher.query.count(),
+    })
+
+@app.route('/api/super/logs')
+def super_logs():
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(200).all()
+    return jsonify([{
+        'time': l.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+        'school_id': l.school_id, 'user_type': l.user_type,
+        'user_name': l.user_name, 'action': l.action, 'ip': l.ip
+    } for l in logs])
+
+@app.route('/api/super/settings', methods=['GET'])
+def super_get_settings():
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    s = get_settings()
+    return jsonify({
+        'mpesa_number':  s.mpesa_number,
+        'mpesa_name':    s.mpesa_name,
+        'platform_name': s.platform_name,
+        'trial_days':    s.trial_days,
+        'updated_at':    s.updated_at.strftime('%Y-%m-%d %H:%M') if s.updated_at else ''
+    })
+
+@app.route('/api/super/settings', methods=['PUT'])
+def super_update_settings():
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    data = request.get_json()
+    s = get_settings()
+    if 'mpesa_number'  in data: s.mpesa_number  = sanitize(data['mpesa_number'], 20)
+    if 'mpesa_name'    in data: s.mpesa_name    = sanitize(data['mpesa_name'], 100)
+    if 'platform_name' in data: s.platform_name = sanitize(data['platform_name'], 200)
+    if 'trial_days'    in data:
+        try: s.trial_days = max(1, int(data['trial_days']))
+        except: pass
+    s.updated_at = datetime.utcnow()
+    db.session.commit()
+    log_action(None, 'super', session.get('super_name'),
+               f'Updated platform settings: M-Pesa {s.mpesa_number} / {s.mpesa_name}')
+    return jsonify({'success': True, 'message': 'Settings saved successfully.'})
+
+# ════════════════════════════════════════
+# SCHOOL ADMIN APIs (scoped to school)
+# ════════════════════════════════════════
+@app.route('/api/school/settings', methods=['GET'])
+def school_settings():
+    school, err = get_school_or_403()
+    if err: return err
+    s = get_settings()
+    return jsonify({
+        'name': school.name, 'code': school.code,
+        'plan': school.plan, 'status': school.status,
+        'days_remaining': school.days_remaining(),
+        'morning_active': school.morning_active,
+        'evening_active': school.evening_active,
+        'public_link': school.public_link or '',
+        'mpesa_number': s.mpesa_number,
+        'mpesa_name':   s.mpesa_name,
+        'plans': PLANS
+    })
+
+@app.route('/api/school/settings', methods=['PUT'])
+def update_school_settings():
+    if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
+    school, err = get_school_or_403()
+    if err: return err
+    data = request.get_json()
+    if 'morning_active' in data: school.morning_active = bool(data['morning_active'])
+    if 'evening_active' in data: school.evening_active = bool(data['evening_active'])
+    if 'public_link' in data: school.public_link = data['public_link'].strip()
+    db.session.commit()
+    return jsonify({'success': True})
+
+# Teachers
 @app.route('/api/teachers', methods=['GET'])
 def get_teachers():
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
-    teachers = Teacher.query.all()
-    return jsonify([{
-        'id': t.id, 'name': t.name, 'teaching_code': t.teaching_code,
-        'active': t.active, 'authorised': t.authorised
-    } for t in teachers])
+    if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
+    teachers = Teacher.query.filter_by(school_id=current_school_id()).all()
+    return jsonify([{'id':t.id,'name':t.name,'teaching_code':t.teaching_code,
+                     'active':t.active,'authorised':t.authorised} for t in teachers])
 
 @app.route('/api/teachers', methods=['POST'])
 def add_teacher():
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
+    if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
+    school, err = get_school_or_403()
+    if err: return err
     data = request.get_json()
-    if not data:
-        return jsonify({'error': 'No data received'}), 400
-    name = sanitize(data.get('name', ''))
-    teaching_code = sanitize(data.get('teaching_code', ''))
-    passcode = sanitize(data.get('passcode', ''))
-    if not name or not teaching_code or not passcode:
-        return jsonify({'error': 'Name, teaching code and passcode are required'}), 400
-    if Teacher.query.filter_by(teaching_code=teaching_code).first():
-        return jsonify({'error': 'Teaching code already exists'}), 400
-    t = Teacher(
-        name=name,
-        teaching_code=teaching_code,
-        passcode=passcode,
-        authorised=data.get('authorised', False)
-    )
+    name = sanitize(data.get('name',''))
+    code = sanitize(data.get('teaching_code',''))
+    passcode = sanitize(data.get('passcode',''))
+    if not all([name, code, passcode]):
+        return jsonify({'error':'Name, code and passcode required'}), 400
+    plan_limit = PLANS.get(school.plan,{}).get('teachers', 10)
+    current_count = Teacher.query.filter_by(school_id=school.id, active=True).count()
+    if current_count >= plan_limit:
+        return jsonify({'error':f'Teacher limit reached for {school.plan} plan ({plan_limit} max). Upgrade to add more.'}), 400
+    if Teacher.query.filter_by(school_id=school.id, teaching_code=code).first():
+        return jsonify({'error':'Teaching code already exists in your school'}), 400
+    t = Teacher(school_id=school.id, name=name, teaching_code=code,
+                passcode=passcode, authorised=data.get('authorised',False))
     db.session.add(t)
     db.session.commit()
-    log_action('admin', session['admin_id'], session.get('admin_name'), f'Added teacher: {t.name}')
     return jsonify({'success': True, 'id': t.id})
 
 @app.route('/api/teachers/<int:tid>', methods=['PUT'])
 def update_teacher(tid):
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
-    t = Teacher.query.get_or_404(tid)
+    if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
+    t = Teacher.query.filter_by(id=tid, school_id=current_school_id()).first_or_404()
     data = request.get_json()
-    if not data:
-        return jsonify({'error': 'No data received'}), 400
-    if 'name' in data:
-        t.name = sanitize(data['name'])
-    if 'teaching_code' in data:
-        t.teaching_code = sanitize(data['teaching_code'])
-    if 'passcode' in data:
-        t.passcode = sanitize(data['passcode'])
-    if 'active' in data:
-        t.active = data['active']
-    if 'authorised' in data:
-        t.authorised = data['authorised']
+    if 'name' in data: t.name = sanitize(data['name'])
+    if 'teaching_code' in data: t.teaching_code = sanitize(data['teaching_code'])
+    if 'passcode' in data: t.passcode = sanitize(data['passcode'])
+    if 'active' in data: t.active = data['active']
+    if 'authorised' in data: t.authorised = data['authorised']
     db.session.commit()
-    log_action('admin', session['admin_id'], session.get('admin_name'), f'Updated teacher: {t.name}')
     return jsonify({'success': True})
 
 @app.route('/api/teachers/<int:tid>', methods=['DELETE'])
 def delete_teacher(tid):
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
-    t = Teacher.query.get_or_404(tid)
+    if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
+    t = Teacher.query.filter_by(id=tid, school_id=current_school_id()).first_or_404()
     db.session.delete(t)
     db.session.commit()
-    log_action('admin', session['admin_id'], session.get('admin_name'), f'Deleted teacher: {t.name}')
     return jsonify({'success': True})
 
-# ─────────────────────────────────────────
-# ROUTE APIs
-# ─────────────────────────────────────────
-
+# Routes
 @app.route('/api/routes', methods=['GET'])
 def get_routes():
-    routes = Route.query.all()
-    return jsonify([{
-        'id': r.id, 'name': r.name, 'description': r.description,
-        'is_morning': r.is_morning, 'active': r.active
-    } for r in routes])
+    sid = current_school_id()
+    if not sid: return jsonify({'error':'Unauthorised'}), 403
+    routes = Route.query.filter_by(school_id=sid).all()
+    return jsonify([{'id':r.id,'name':r.name,'description':r.description,
+                     'is_morning':r.is_morning,'active':r.active} for r in routes])
 
 @app.route('/api/routes', methods=['POST'])
 def add_route():
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
+    if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
+    sid = current_school_id()
+    if not sid: return jsonify({'error':'Unauthorised'}), 403
+    school = School.query.get(sid)
+    if not school: return jsonify({'error':'School not found'}), 404
     data = request.get_json()
-    r = Route(
-        name=data['name'],
-        description=data.get('description', ''),
-        is_morning=data.get('is_morning', False)
-    )
+    plan_limit = PLANS.get(school.plan,{}).get('routes', 4)
+    current_count = Route.query.filter_by(school_id=school.id, active=True).count()
+    if current_count >= plan_limit:
+        return jsonify({'error':f'Route limit reached for {school.plan} plan ({plan_limit} max). Upgrade to add more.'}), 400
+    r = Route(school_id=school.id, name=sanitize(data.get('name','')),
+              description=sanitize(data.get('description','')),
+              is_morning=data.get('is_morning', False))
     db.session.add(r)
     db.session.commit()
-    log_action('admin', session['admin_id'], session.get('admin_name'), f'Added route: {r.name}')
     return jsonify({'success': True, 'id': r.id})
 
 @app.route('/api/routes/<int:rid>', methods=['PUT'])
 def update_route(rid):
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
-    r = Route.query.get_or_404(rid)
+    if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
+    r = Route.query.filter_by(id=rid, school_id=current_school_id()).first_or_404()
     data = request.get_json()
-    for field in ['name', 'description', 'is_morning', 'active']:
-        if field in data:
-            setattr(r, field, data[field])
+    for f in ['name','description','is_morning','active']:
+        if f in data: setattr(r, f, sanitize(data[f]) if f in ['name','description'] else data[f])
     db.session.commit()
-    log_action('admin', session['admin_id'], session.get('admin_name'), f'Updated route: {r.name}')
     return jsonify({'success': True})
 
 @app.route('/api/routes/<int:rid>', methods=['DELETE'])
 def delete_route(rid):
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
-    r = Route.query.get_or_404(rid)
+    if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
+    r = Route.query.filter_by(id=rid, school_id=current_school_id()).first_or_404()
     db.session.delete(r)
     db.session.commit()
-    log_action('admin', session['admin_id'], session.get('admin_name'), f'Deleted route: {r.name}')
     return jsonify({'success': True})
 
-# ─────────────────────────────────────────
-# ROSTER APIs
-# ─────────────────────────────────────────
-
+# Roster
 @app.route('/api/roster/generate', methods=['POST'])
 def generate_roster_api():
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
+    if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
+    school, err = get_school_or_403()
+    if err: return err
     data = request.get_json()
     target = date.fromisoformat(data.get('date', date.today().isoformat()))
     if is_weekend(target):
-        return jsonify({'error': 'Cannot generate roster for weekends', 'is_weekend': True}), 400
-    assignments = generate_roster(target)
-    save_roster(assignments, target)
-    log_action('admin', session['admin_id'], session.get('admin_name'), f'Generated roster for {target}')
+        return jsonify({'error':'Cannot generate roster for weekends'}), 400
+    assignments = generate_roster(school.id, target)
+    save_roster(school.id, assignments, target)
+    log_action(school.id, 'admin', session.get('school_name'), f'Generated roster for {target}')
     return jsonify({'success': True, 'assignments': assignments})
 
-@app.route('/api/roster', methods=['GET'])
+@app.route('/api/roster')
 def get_roster():
-    target_str = request.args.get('date', date.today().isoformat())
-    target = date.fromisoformat(target_str)
-    assignments = DutyAssignment.query.filter_by(duty_date=target).all()
+    sid = current_school_id()
+    if not sid: return jsonify({'error':'Unauthorised'}), 403
+    target = date.fromisoformat(request.args.get('date', date.today().isoformat()))
+    assignments = DutyAssignment.query.filter_by(school_id=sid, duty_date=target).all()
     return jsonify([{
-        'id': a.id,
-        'teacher_id': a.teacher_id,
-        'teacher_name': a.teacher.name,
-        'teaching_code': a.teacher.teaching_code,
-        'route_id': a.route_id,
-        'route_name': a.route.name,
-        'is_morning': a.is_morning,
-        'status': a.status,
-        'duty_date': a.duty_date.isoformat()
+        'id':a.id,'teacher_name':a.teacher.name,
+        'teaching_code':a.teacher.teaching_code,
+        'route_name':a.route.name,'is_morning':a.is_morning,
+        'status':a.status,'duty_date':a.duty_date.isoformat()
     } for a in assignments])
 
-@app.route('/api/roster/teacher', methods=['GET'])
-def get_teacher_roster():
-    if not session.get('teacher_id'):
-        return jsonify({'error': 'Unauthorised'}), 403
-    tid = session['teacher_id']
-    target_str = request.args.get('date', date.today().isoformat())
-    target = date.fromisoformat(target_str)
-    assignments = DutyAssignment.query.filter_by(duty_date=target, teacher_id=tid).all()
-    return jsonify([{
-        'id': a.id,
-        'route_name': a.route.name,
-        'is_morning': a.is_morning,
-        'status': a.status,
-        'duty_date': a.duty_date.isoformat()
-    } for a in assignments])
-
-@app.route('/api/roster/week', methods=['GET'])
-def get_week_roster():
-    start_str = request.args.get('start', date.today().isoformat())
-    start = date.fromisoformat(start_str)
-    days = []
-    d = start
-    for _ in range(7):
-        if not is_weekend(d):
-            assignments = DutyAssignment.query.filter_by(duty_date=d).all()
-            days.append({
-                'date': d.isoformat(),
-                'day': d.strftime('%A'),
-                'assignments': [{
-                    'teacher_name': a.teacher.name,
-                    'teaching_code': a.teacher.teaching_code,
-                    'route_name': a.route.name,
-                    'is_morning': a.is_morning,
-                    'status': a.status
-                } for a in assignments]
-            })
-        d += timedelta(days=1)
-    return jsonify(days)
+@app.route('/api/roster/teacher')
+def teacher_roster():
+    if not session.get('teacher_id'): return jsonify({'error':'Unauthorised'}), 403
+    target = date.fromisoformat(request.args.get('date', date.today().isoformat()))
+    assignments = DutyAssignment.query.filter_by(
+        school_id=session['school_id'],
+        teacher_id=session['teacher_id'], duty_date=target).all()
+    return jsonify([{'route_name':a.route.name,'is_morning':a.is_morning,
+                     'status':a.status,'duty_date':a.duty_date.isoformat()} for a in assignments])
 
 @app.route('/api/roster/<int:aid>/absent', methods=['POST'])
 def mark_absent(aid):
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
-    a = DutyAssignment.query.get_or_404(aid)
+    if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
+    a = DutyAssignment.query.filter_by(id=aid, school_id=current_school_id()).first_or_404()
     a.status = 'absent'
     db.session.commit()
-    suggestions = get_replacement_suggestions(a.teacher_id, a.route_id, a.duty_date)
-    log_action('admin', session['admin_id'], session.get('admin_name'),
-               f'Marked absent: {a.teacher.name} on {a.duty_date}')
+    on_duty = {x.teacher_id for x in DutyAssignment.query.filter_by(
+        school_id=current_school_id(), duty_date=a.duty_date).all()}
+    on_duty.discard(a.teacher_id)
+    candidates = Teacher.query.filter_by(school_id=current_school_id(),
+                                         active=True, authorised=True).all()
+    suggestions = [{'id':t.id,'name':t.name,'teaching_code':t.teaching_code}
+                   for t in candidates if t.id not in on_duty]
     return jsonify({'success': True, 'suggestions': suggestions})
 
 @app.route('/api/roster/<int:aid>/replace', methods=['POST'])
 def replace_teacher(aid):
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
-    a = DutyAssignment.query.get_or_404(aid)
+    if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
+    a = DutyAssignment.query.filter_by(id=aid, school_id=current_school_id()).first_or_404()
     data = request.get_json()
-    new_teacher = Teacher.query.get_or_404(data['teacher_id'])
-    old_name = a.teacher.name
     a.teacher_id = data['teacher_id']
     a.status = 'assigned'
     db.session.commit()
-    log_action('admin', session['admin_id'], session.get('admin_name'),
-               f'Replaced {old_name} with {new_teacher.name} on route {a.route.name}')
     return jsonify({'success': True})
 
-# ─────────────────────────────────────────
-# AUDIT LOG APIs
-# ─────────────────────────────────────────
-
-@app.route('/api/logs', methods=['GET'])
+@app.route('/api/logs')
 def get_logs():
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
-    limit = int(request.args.get('limit', 100))
-    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(limit).all()
+    if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
+    logs = AuditLog.query.filter_by(school_id=current_school_id())\
+           .order_by(AuditLog.timestamp.desc()).limit(100).all()
+    return jsonify([{'time':l.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                     'user_type':l.user_type,'user_name':l.user_name,
+                     'action':l.action,'ip':l.ip} for l in logs])
+
+# ── Teacher week roster (own duties only) ─
+@app.route('/api/roster/teacher/week')
+def teacher_week_roster():
+    if not session.get('teacher_id'): return jsonify({'error':'Unauthorised'}), 403
+    # Return Mon–Fri for the week containing 'date' param
+    base = date.fromisoformat(request.args.get('date', date.today().isoformat()))
+    # Find Monday of that week
+    monday = base - timedelta(days=base.weekday())
+    week = []
+    for i in range(5):
+        day = monday + timedelta(days=i)
+        assignments = DutyAssignment.query.filter_by(
+            school_id=session['school_id'],
+            teacher_id=session['teacher_id'],
+            duty_date=day).all()
+        week.append({
+            'date': day.isoformat(),
+            'day': day.strftime('%A'),
+            'short': day.strftime('%a %d %b'),
+            'duties': [{'route_name': a.route.name, 'is_morning': a.is_morning,
+                        'status': a.status} for a in assignments]
+        })
+    return jsonify(week)
+
+# ── Super admin: view any school's roster ─
+@app.route('/api/super/school/<int:sid>/roster')
+def super_view_roster(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    target = date.fromisoformat(request.args.get('date', date.today().isoformat()))
+    assignments = DutyAssignment.query.filter_by(school_id=sid, duty_date=target).all()
     return jsonify([{
-        'id': l.id,
-        'timestamp': l.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-        'user_type': l.user_type,
-        'user_name': l.user_name,
-        'action': l.action,
-        'ip': l.ip_address
-    } for l in logs])
+        'id': a.id, 'teacher_name': a.teacher.name,
+        'teaching_code': a.teacher.teaching_code,
+        'route_name': a.route.name, 'is_morning': a.is_morning,
+        'status': a.status, 'duty_date': a.duty_date.isoformat()
+    } for a in assignments])
 
-# ─────────────────────────────────────────
-# ADMIN MANAGEMENT
-# ─────────────────────────────────────────
+# ── Super admin: view any school's teachers ─
+@app.route('/api/super/school/<int:sid>/teachers')
+def super_view_teachers(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    teachers = Teacher.query.filter_by(school_id=sid).all()
+    return jsonify([{'id': t.id, 'name': t.name, 'teaching_code': t.teaching_code,
+                     'active': t.active, 'authorised': t.authorised} for t in teachers])
 
-@app.route('/api/admins', methods=['GET'])
-def get_admins():
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
-    admins = Admin.query.all()
-    return jsonify([{'id': a.id, 'username': a.username, 'role': a.role} for a in admins])
+# ── Super admin: view any school's routes ─
+@app.route('/api/super/school/<int:sid>/routes')
+def super_view_routes(sid):
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    routes = Route.query.filter_by(school_id=sid).all()
+    return jsonify([{'id': r.id, 'name': r.name, 'description': r.description,
+                     'is_morning': r.is_morning, 'active': r.active} for r in routes])
 
-@app.route('/api/admins', methods=['POST'])
-def add_admin():
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
-    data = request.get_json()
-    if Admin.query.filter_by(username=data['username']).first():
-        return jsonify({'error': 'Username already exists'}), 400
-    a = Admin(username=data['username'], role=data.get('role', 'coordinator'))
-    a.set_password(data['password'])
-    db.session.add(a)
-    db.session.commit()
-    log_action('admin', session['admin_id'], session.get('admin_name'), f'Added admin: {a.username}')
-    return jsonify({'success': True})
+# ── Super admin: live GPS tracking all schools ─
+@app.route('/api/super/tracking')
+def super_tracking():
+    if not is_super(): return jsonify({'error':'Unauthorised'}), 403
+    drivers = Driver.query.filter_by(active=True).all()
+    return jsonify([{
+        'id': d.id,
+        'name': d.name,
+        'phone': d.phone,
+        'school_id': d.school_id,
+        'school_name': d.school.name if d.school else None,
+        'route_name': d.assigned_route.name if d.assigned_route else None,
+        'is_tracking': d.is_tracking,
+        'latitude': d.current_latitude,
+        'longitude': d.current_longitude,
+        'last_update': d.last_location_update.isoformat() if d.last_location_update else None
+    } for d in drivers])
 
-@app.route('/api/admins/<int:aid>', methods=['DELETE'])
-def delete_admin(aid):
-    if not is_admin():
-        return jsonify({'error': 'Unauthorised'}), 403
-    a = Admin.query.get_or_404(aid)
-    db.session.delete(a)
-    db.session.commit()
-    return jsonify({'success': True})
 
-# ─────────────────────────────────────────
-# INIT DB + SEED
-# ─────────────────────────────────────────
+# ----------------------------------------
+# SECURITY HEADERS
+# ----------------------------------------
+@app.after_request
+def security_headers(response):
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
 
+# ----------------------------------------
+# INIT DB
+# ----------------------------------------
 def init_db():
     with app.app_context():
         db.create_all()
-        # Default settings
-        if not Settings.query.first():
-            db.session.add(Settings(school_name='My School'))
+        if not SuperAdmin.query.first():
+            sa = SuperAdmin(username='superadmin')
+            sa.set_password('STS@2026#Owner')
+            db.session.add(sa)
             db.session.commit()
-        # Default admin
-        if not Admin.query.first():
-            a = Admin(username='admin', role='it')
-            a.set_password('admin123')
-            db.session.add(a)
+            print('Super admin created: superadmin / STS@2026#Owner')
+        if not PlatformSettings.query.first():
+            db.session.add(PlatformSettings())
             db.session.commit()
-        # Seed 6 routes
-        if not Route.query.first():
-            routes = [
-                Route(name='Route 1 - North', description='North suburb area'),
-                Route(name='Route 2 - South', description='South suburb area'),
-                Route(name='Route 3 - East', description='East suburb area'),
-                Route(name='Route 4 - West', description='West suburb area'),
-                Route(name='Route 5 - Central', description='Central area'),
-                Route(name='Route 6 - Morning North', description='Morning north route', is_morning=True),
-            ]
-            db.session.bulk_save_objects(routes)
-            db.session.commit()
-        # Seed 12 teachers
-        if not Teacher.query.first():
-            teachers = [
-                Teacher(name='Alice Mwangi', teaching_code='TCH001', passcode='1001', authorised=True),
-                Teacher(name='Bob Odhiambo', teaching_code='TCH002', passcode='1002', authorised=True),
-                Teacher(name='Carol Njeri', teaching_code='TCH003', passcode='1003', authorised=True),
-                Teacher(name='David Kamau', teaching_code='TCH004', passcode='1004', authorised=True),
-                Teacher(name='Eve Wanjiru', teaching_code='TCH005', passcode='1005', authorised=True),
-                Teacher(name='Frank Otieno', teaching_code='TCH006', passcode='1006', authorised=True),
-                Teacher(name='Grace Achieng', teaching_code='TCH007', passcode='1007', authorised=True),
-                Teacher(name='Henry Mutua', teaching_code='TCH008', passcode='1008', authorised=True),
-                Teacher(name='Irene Chebet', teaching_code='TCH009', passcode='1009', authorised=True),
-                Teacher(name='James Kariuki', teaching_code='TCH010', passcode='1010', authorised=True),
-                Teacher(name='Karen Auma', teaching_code='TCH011', passcode='1011', authorised=True),
-                Teacher(name='Liam Ndirangu', teaching_code='TCH012', passcode='1012', authorised=True),
-            ]
-            db.session.bulk_save_objects(teachers)
-            db.session.commit()
+            print('Platform settings initialised.')
 
-# ─────────────────────────────────────────
-# SECURITY HEADERS
-# ─────────────────────────────────────────
-@app.after_request
-def add_security_headers(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    return response
+# Always initialise DB
+init_db()
 
 if __name__ == '__main__':
-    init_db()
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 5001))
     app.run(host='0.0.0.0', port=port, debug=False)

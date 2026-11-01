@@ -1,274 +1,236 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Admin Panel – STS</title>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>My School Transport – Admin</title>
+<meta name="theme-color" content="#1a5276"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="My School Transport"/>
+<link rel="manifest" href="/static/manifest.json"/>
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
 <link rel="stylesheet" href="/static/css/style.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
-<body class="dashboard-body">
-
-<!-- TOP NAV -->
+<body class="dash-body">
 <nav class="topnav">
-  <div class="nav-left">
-    <span class="nav-logo">🚌</span>
-    <span id="nav-school-name" class="nav-title">School Transport System</span>
-  </div>
+  <div class="nav-left"><img src="/static/icons/icon-192.png" alt="MST" class="nav-logo" style="width:32px;height:32px;border-radius:6px;"/>
+    <span id="nav-school" class="nav-title">School Transport System</span></div>
   <div class="nav-right">
     <span id="nav-user" class="nav-user"></span>
     <span id="nav-role" class="badge-role"></span>
     <button class="btn-outline-sm" onclick="logout()">Logout</button>
   </div>
 </nav>
-
-<!-- SIDEBAR + CONTENT -->
-<div class="dashboard-layout">
+<div class="dash-layout">
   <aside class="sidebar">
     <ul class="nav-menu">
-      <li class="nav-item active" onclick="showSection('roster')">📋 Roster</li>
-      <li class="nav-item" onclick="showSection('teachers')">👩‍🏫 Teachers</li>
-      <li class="nav-item" onclick="showSection('routes')">🗺️ Routes</li>
-      <li class="nav-item" onclick="showSection('logs')">📝 Logs</li>
-      <li class="nav-item" onclick="showSection('admins')">🔑 Admins</li>
-      <li class="nav-item" onclick="showSection('settings')">⚙️ Settings</li>
+      <li class="nav-item active" onclick="showSection('roster',this)">📋 Roster</li>
+      <li class="nav-item" onclick="showSection('teachers',this)">👩‍🏫 Teachers</li>
+      <li class="nav-item" onclick="showSection('routes',this)">🗺️ Routes</li>
+      <li class="nav-item" onclick="showSection('tracking',this)">📍 Live Tracking</li>
+      <li class="nav-item" onclick="showSection('drivers',this)">🚗 Drivers</li>
+      <li class="nav-item" onclick="showSection('parents',this)">👨‍👩‍👧 Parents</li>
+      <li class="nav-item" onclick="showSection('logs',this)">📝 Logs</li>
+      <li class="nav-item" onclick="showSection('settings',this)">⚙️ Settings</li>
+      <li class="nav-item" onclick="window.location.href='/payment'">💳 Subscription</li>
     </ul>
   </aside>
-
   <main class="main-content">
 
-    <!-- ── ROSTER ── -->
+    <!-- ROSTER -->
     <section id="section-roster" class="section active">
-      <div class="section-header">
-        <h2>Daily Duty Roster</h2>
+      <div id="sub-banner"></div>
+      <div class="section-header"><h2>Daily Duty Roster</h2>
         <div class="header-actions">
           <input type="date" id="roster-date" class="date-input"/>
           <button class="btn-primary" onclick="generateRoster()">⚡ Generate</button>
           <button class="btn-outline" onclick="loadRoster()">🔄 Refresh</button>
         </div>
       </div>
-
-      <div id="roster-weekend-msg" class="alert-info hidden">
-        🎉 Weekend! No duty roster required.
-      </div>
-
-      <div id="roster-empty-msg" class="alert-info hidden">
-        No roster for this date. Click <strong>Generate</strong> to auto-create one.
-      </div>
-
+      <div id="roster-msg" class="alert-info hidden"></div>
       <div id="roster-table-wrap">
-        <table class="data-table" id="roster-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Teacher</th>
-              <th>Code</th>
-              <th>Route</th>
-              <th>Type</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="roster-body"></tbody>
-        </table>
+        <table class="data-table"><thead><tr><th>#</th><th>Teacher</th><th>Code</th><th>Route</th><th>Type</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="roster-body"></tbody></table>
       </div>
-
-      <h3 class="sub-heading">Week Overview</h3>
+      <h3 style="margin:1.5rem 0 1rem;font-size:1.1rem;font-weight:700">Week Overview</h3>
       <div id="week-grid" class="week-grid"></div>
     </section>
 
-    <!-- ── TEACHERS ── -->
+    <!-- TEACHERS -->
     <section id="section-teachers" class="section">
+      <div class="section-header"><h2>Teachers</h2>
+        <button class="btn-primary" onclick="openAddTeacher()">+ Add Teacher</button></div>
+      <table class="data-table"><thead><tr><th>Name</th><th>Code</th><th>Authorised</th><th>Active</th><th>Actions</th></tr></thead>
+      <tbody id="teachers-body"></tbody></table>
+    </section>
+
+    <!-- LIVE TRACKING -->
+    <section id="section-tracking" class="section">
       <div class="section-header">
-        <h2>Teachers</h2>
-        <button class="btn-primary" onclick="openModal('teacher-modal')">+ Add Teacher</button>
+        <h2>📍 Live GPS Tracking</h2>
+        <button class="btn-outline" onclick="refreshTracking()">🔄 Refresh</button>
       </div>
+      <div id="tracking-cards" style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;"></div>
+      <div id="admin-map" style="height:450px;border-radius:10px;border:2px solid var(--grey);"></div>
+      <p style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem;">Map auto-refreshes every 15 seconds. Click a driver card to centre on their bus.</p>
+    </section>
+
+    <!-- ROUTES -->
+    <section id="section-routes" class="section">      <div class="section-header"><h2>Routes</h2>
+        <button class="btn-primary" onclick="openAddRoute()">+ Add Route</button></div>
+      <table class="data-table"><thead><tr><th>Route Name</th><th>Description</th><th>Morning</th><th>Active</th><th>Actions</th></tr></thead>
+      <tbody id="routes-body"></tbody></table>
+    </section>
+
+    <!-- DRIVERS -->
+    <section id="section-drivers" class="section">
+      <div class="section-header"><h2>Drivers</h2>
+        <button class="btn-primary" onclick="openAddDriver()">+ Add Driver</button></div>
       <table class="data-table">
-        <thead>
-          <tr><th>Name</th><th>Code</th><th>Passcode</th><th>Authorised</th><th>Active</th><th>Actions</th></tr>
-        </thead>
-        <tbody id="teachers-body"></tbody>
+        <thead><tr><th>Name</th><th>Phone</th><th>License</th><th>Assigned Route</th><th>Tracking</th><th>Actions</th></tr></thead>
+        <tbody id="drivers-body"></tbody>
       </table>
     </section>
 
-    <!-- ── ROUTES ── -->
-    <section id="section-routes" class="section">
-      <div class="section-header">
-        <h2>Routes</h2>
-        <button class="btn-primary" onclick="openModal('route-modal')">+ Add Route</button>
-      </div>
+    <!-- PARENTS -->
+    <section id="section-parents" class="section">
+      <div class="section-header"><h2>Parents</h2>
+        <button class="btn-primary" onclick="openAddParent()">+ Add Parent</button></div>
       <table class="data-table">
-        <thead>
-          <tr><th>Route Name</th><th>Description</th><th>Morning</th><th>Active</th><th>Actions</th></tr>
-        </thead>
-        <tbody id="routes-body"></tbody>
+        <thead><tr><th>Parent Name</th><th>Phone</th><th>Child Name</th><th>Class</th><th>Route</th><th>Actions</th></tr></thead>
+        <tbody id="parents-body"></tbody>
       </table>
     </section>
 
-    <!-- ── LOGS ── -->
+    <!-- LOGS -->
     <section id="section-logs" class="section">
-      <div class="section-header">
-        <h2>Audit Log</h2>
-        <button class="btn-outline" onclick="loadLogs()">🔄 Refresh</button>
-      </div>
-      <table class="data-table">
-        <thead>
-          <tr><th>Time</th><th>User Type</th><th>Name</th><th>Action</th><th>IP</th></tr>
-        </thead>
-        <tbody id="logs-body"></tbody>
-      </table>
+      <div class="section-header"><h2>Audit Log</h2>
+        <button class="btn-outline" onclick="loadLogs()">🔄 Refresh</button></div>
+      <table class="data-table"><thead><tr><th>Time</th><th>Type</th><th>User</th><th>Action</th><th>IP</th></tr></thead>
+      <tbody id="logs-body"></tbody></table>
     </section>
 
-    <!-- ── ADMINS ── -->
-    <section id="section-admins" class="section">
-      <div class="section-header">
-        <h2>Admin Accounts</h2>
-        <button class="btn-primary" onclick="openModal('admin-modal')">+ Add Admin</button>
-      </div>
-      <table class="data-table">
-        <thead>
-          <tr><th>Username</th><th>Role</th><th>Actions</th></tr>
-        </thead>
-        <tbody id="admins-body"></tbody>
-      </table>
-    </section>
-
-    <!-- ── SETTINGS ── -->
+    <!-- SETTINGS -->
     <section id="section-settings" class="section">
       <div class="section-header"><h2>Settings</h2></div>
-      <div class="settings-card">
-
-        <!-- School Name -->
-        <div class="form-group">
-          <label>School Name</label>
-          <input type="text" id="setting-school-name" placeholder="Enter school name"/>
-        </div>
-
-        <hr style="margin:1.5rem 0;border:none;border-top:2px solid var(--grey)"/>
+      <div style="display:flex;flex-direction:column;gap:1.2rem;max-width:520px;">
 
         <!-- Route Activation -->
-        <h3 style="font-size:1rem;margin-bottom:1rem;color:var(--black)">🚌 Route Activation</h3>
+        <div style="background:var(--white);border-radius:var(--r);padding:1.8rem;box-shadow:var(--sh)">
+          <h3 style="margin-bottom:1rem;font-size:1rem">🚌 Route Activation</h3>
+          <div class="form-group toggle-row">
+            <label>🌅 Morning Routes Active</label>
+            <label class="toggle"><input type="checkbox" id="s-morning"/><span class="slider"></span></label>
+          </div>
+          <div class="form-group toggle-row">
+            <label>🌆 Evening Routes Active</label>
+            <label class="toggle"><input type="checkbox" id="s-evening"/><span class="slider"></span></label>
+          </div>
+          <hr style="margin:1.2rem 0;border:none;border-top:2px solid var(--grey)"/>
+          <h3 style="margin-bottom:1rem;font-size:1rem">🔗 Share Link</h3>
+          <div class="form-group"><label>Public URL</label>
+            <input type="text" id="s-link" placeholder="https://your-app.onrender.com"/></div>
+          <button class="btn-primary" onclick="saveSettings()">💾 Save Settings</button>
+          <p id="settings-msg" class="success-msg hidden">✔ Saved.</p>
+        </div>
 
-        <div class="route-activation-grid">
-          <!-- Evening Routes -->
-          <div class="route-activation-card active-card" id="evening-card">
-            <div class="ra-icon">🌆</div>
-            <div class="ra-info">
-              <div class="ra-title">Evening Routes</div>
-              <div class="ra-desc">Afternoon/evening transport for all routes</div>
-              <div id="evening-status" class="ra-status status-active">● ACTIVE</div>
+        <!-- Install / Share App Card -->
+        <div style="background:var(--white);border-radius:var(--r);padding:1.8rem;box-shadow:var(--sh)">
+          <h3 style="margin-bottom:0.5rem;font-size:1rem">📲 Share App Link</h3>
+          <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1rem;">
+            Share this link with teachers, drivers and parents so they can install the app on their phone — no app store needed.
+          </p>
+          <div style="display:flex;gap:0.5rem;align-items:center;background:var(--bg);padding:0.8rem;border-radius:8px;margin-bottom:1rem;">
+            <span id="app-url" style="font-size:0.85rem;font-weight:600;flex:1;word-break:break-all;">https://mytransport.onrender.com</span>
+            <button class="btn-primary" onclick="copyAppLink()" style="padding:0.5rem 1rem;white-space:nowrap;">📋 Copy</button>
+          </div>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button class="btn-secondary" onclick="shareViaWhatsApp()" style="flex:1;">
+              💬 Share via WhatsApp
+            </button>
+            <button class="btn-secondary" onclick="shareViaSMS()" style="flex:1;">
+              📱 Share via SMS
+            </button>
+          </div>
+          <p id="copy-msg" class="success-msg hidden" style="margin-top:0.5rem;">✔ Link copied!</p>
+        </div>
+
+        <!-- How to Install Card -->
+        <div style="background:var(--white);border-radius:var(--r);padding:1.8rem;box-shadow:var(--sh)">
+          <h3 style="margin-bottom:1rem;font-size:1rem">📱 How to Install App</h3>
+          <div style="display:flex;flex-direction:column;gap:0.8rem;font-size:0.88rem;">
+            <div style="background:var(--bg);padding:0.8rem;border-radius:8px;">
+              <strong>🤖 Android (Chrome):</strong>
+              <ol style="margin:0.5rem 0 0 1.2rem;padding:0;line-height:1.8;">
+                <li>Open the link in Chrome</li>
+                <li>Tap ⋮ menu (top right)</li>
+                <li>Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong></li>
+                <li>Tap <strong>Install</strong></li>
+              </ol>
             </div>
-            <div class="ra-action">
-              <label class="toggle">
-                <input type="checkbox" id="setting-evening" checked onchange="updateRouteCardStyle('evening')"/>
-                <span class="slider"></span>
-              </label>
+            <div style="background:var(--bg);padding:0.8rem;border-radius:8px;">
+              <strong>🍎 iPhone / iPad (Safari):</strong>
+              <ol style="margin:0.5rem 0 0 1.2rem;padding:0;line-height:1.8;">
+                <li>Open the link in <strong>Safari</strong></li>
+                <li>Tap the <strong>Share</strong> button (box with arrow)</li>
+                <li>Scroll and tap <strong>"Add to Home Screen"</strong></li>
+                <li>Tap <strong>Add</strong></li>
+              </ol>
+            </div>
+            <div style="background:var(--bg);padding:0.8rem;border-radius:8px;">
+              <strong>💻 Desktop (Chrome / Edge):</strong>
+              <ol style="margin:0.5rem 0 0 1.2rem;padding:0;line-height:1.8;">
+                <li>Open the link in Chrome or Edge</li>
+                <li>Click the <strong>⊕ Install</strong> icon in the address bar</li>
+                <li>Click <strong>Install</strong></li>
+              </ol>
+            </div>
+            <div style="background:#fff8e1;padding:0.8rem;border-radius:8px;border-left:3px solid var(--gold);">
+              <strong>✨ Auto Updates:</strong> Once installed, the app updates automatically whenever a new version is deployed. Users see an <em>"Update Available"</em> banner and tap <strong>Update Now</strong>.
             </div>
           </div>
-
-          <!-- Morning Routes -->
-          <div class="route-activation-card" id="morning-card">
-            <div class="ra-icon">🌅</div>
-            <div class="ra-info">
-              <div class="ra-title">Morning Routes</div>
-              <div class="ra-desc">Early morning transport — activate when needed</div>
-              <div id="morning-status" class="ra-status status-inactive">● DORMANT</div>
-            </div>
-            <div class="ra-action">
-              <label class="toggle">
-                <input type="checkbox" id="setting-morning" onchange="updateRouteCardStyle('morning')"/>
-                <span class="slider"></span>
-              </label>
-            </div>
-          </div>
         </div>
 
-        <div class="alert-info" style="margin:1rem 0;font-size:0.85rem">
-          ⚠️ Only authorised admins (Headteacher, IT, Coordinator) can activate morning routes.
-          Morning routes remain <strong>dormant</strong> until manually switched on here.
-        </div>
-
-        <hr style="margin:1.5rem 0;border:none;border-top:2px solid var(--grey)"/>
-
-        <!-- Public Link -->
-        <h3 style="font-size:1rem;margin-bottom:1rem;color:var(--black)">🔗 Public Access Link</h3>
-        <div class="form-group">
-          <label>Link Label / Name</label>
-          <input type="text" id="setting-link-label" placeholder="e.g. Weekly School Transport Link"/>
-        </div>
-        <div class="form-group">
-          <label>Public URL</label>
-          <div style="display:flex;gap:0.5rem">
-            <input type="text" id="setting-public-link" placeholder="e.g. https://school-transport.onrender.com"/>
-            <button class="btn-outline" onclick="copyLink()" title="Copy link">📋</button>
-          </div>
-        </div>
-
-        <!-- Share Card -->
-        <div id="share-card" class="share-card hidden">
-          <div class="share-card-inner">
-            <div class="share-card-title" id="share-label-preview"></div>
-            <div class="share-card-school" id="share-school-preview"></div>
-            <a class="share-card-link" id="share-link-preview" href="#" target="_blank"></a>
-            <div class="share-card-hint">Share this link with teachers via WhatsApp, SMS or email</div>
-            <button class="btn-primary" style="width:100%;margin-top:0.8rem" onclick="shareLink()">📤 Share / Copy Link</button>
-          </div>
-        </div>
-
-        <button class="btn-primary" onclick="saveSettings()" style="margin-top:1rem">💾 Save All Settings</button>
-        <p id="settings-msg" class="success-msg hidden">✔ Settings saved successfully.</p>
       </div>
     </section>
-
   </main>
 </div>
-
-<!-- ─── MODALS ─── -->
 
 <!-- Teacher Modal -->
 <div id="teacher-modal" class="modal-overlay hidden">
   <div class="modal">
-    <div class="modal-header">
-      <h3 id="teacher-modal-title">Add Teacher</h3>
-      <button class="modal-close" onclick="closeModal('teacher-modal')">✕</button>
-    </div>
-    <input type="hidden" id="edit-teacher-id"/>
+    <div class="modal-header"><h3 id="t-modal-title">Add Teacher</h3>
+      <button class="modal-close" onclick="closeModal('teacher-modal')">✕</button></div>
+    <input type="hidden" id="t-id"/>
     <div class="form-group"><label>Full Name</label><input type="text" id="t-name"/></div>
-    <div class="form-group"><label>Teaching Code</label><input type="text" id="t-tcode"/></div>
-    <div class="form-group"><label>Passcode (PIN)</label><input type="text" id="t-pcode"/></div>
-    <div class="form-group toggle-row">
-      <label>Authorised</label>
-      <label class="toggle"><input type="checkbox" id="t-auth"/><span class="slider"></span></label>
-    </div>
-    <div class="form-group toggle-row">
-      <label>Active</label>
-      <label class="toggle"><input type="checkbox" id="t-active" checked/><span class="slider"></span></label>
-    </div>
+    <div class="form-group"><label>Teaching Code</label><input type="text" id="t-code"/></div>
+    <div class="form-group"><label>Passcode</label><input type="text" id="t-passcode"/></div>
+    <div class="form-group toggle-row"><label>Authorised</label>
+      <label class="toggle"><input type="checkbox" id="t-auth"/><span class="slider"></span></label></div>
+    <div class="form-group toggle-row"><label>Active</label>
+      <label class="toggle"><input type="checkbox" id="t-active" checked/><span class="slider"></span></label></div>
     <div class="modal-footer">
       <button class="btn-outline" onclick="closeModal('teacher-modal')">Cancel</button>
       <button class="btn-primary" onclick="saveTeacher()">Save</button>
     </div>
-    <p id="teacher-modal-err" class="error-msg hidden"></p>
+    <p id="t-err" class="error-msg hidden"></p>
   </div>
 </div>
 
 <!-- Route Modal -->
 <div id="route-modal" class="modal-overlay hidden">
   <div class="modal">
-    <div class="modal-header">
-      <h3 id="route-modal-title">Add Route</h3>
-      <button class="modal-close" onclick="closeModal('route-modal')">✕</button>
-    </div>
-    <input type="hidden" id="edit-route-id"/>
+    <div class="modal-header"><h3 id="r-modal-title">Add Route</h3>
+      <button class="modal-close" onclick="closeModal('route-modal')">✕</button></div>
+    <input type="hidden" id="r-id"/>
     <div class="form-group"><label>Route Name</label><input type="text" id="r-name"/></div>
     <div class="form-group"><label>Description</label><input type="text" id="r-desc"/></div>
-    <div class="form-group toggle-row">
-      <label>Morning Route</label>
-      <label class="toggle"><input type="checkbox" id="r-morning"/><span class="slider"></span></label>
-    </div>
-    <div class="form-group toggle-row">
-      <label>Active</label>
-      <label class="toggle"><input type="checkbox" id="r-active" checked/><span class="slider"></span></label>
-    </div>
+    <div class="form-group toggle-row"><label>Morning Route</label>
+      <label class="toggle"><input type="checkbox" id="r-morning"/><span class="slider"></span></label></div>
+    <div class="form-group toggle-row"><label>Active</label>
+      <label class="toggle"><input type="checkbox" id="r-active" checked/><span class="slider"></span></label></div>
     <div class="modal-footer">
       <button class="btn-outline" onclick="closeModal('route-modal')">Cancel</button>
       <button class="btn-primary" onclick="saveRoute()">Save</button>
@@ -276,44 +238,60 @@
   </div>
 </div>
 
-<!-- Admin Modal -->
-<div id="admin-modal" class="modal-overlay hidden">
+<!-- Replace Modal -->
+<div id="replace-modal" class="modal-overlay hidden">
   <div class="modal">
-    <div class="modal-header">
-      <h3>Add Admin</h3>
-      <button class="modal-close" onclick="closeModal('admin-modal')">✕</button>
-    </div>
-    <div class="form-group"><label>Username</label><input type="text" id="adm-user"/></div>
-    <div class="form-group"><label>Password</label><input type="password" id="adm-pass"/></div>
-    <div class="form-group">
-      <label>Role</label>
-      <select id="adm-role" class="form-select">
-        <option value="coordinator">Transport Coordinator</option>
-        <option value="headteacher">Headteacher</option>
-        <option value="it">IT Expert</option>
-      </select>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-outline" onclick="closeModal('admin-modal')">Cancel</button>
-      <button class="btn-primary" onclick="saveAdmin()">Save</button>
-    </div>
-    <p id="admin-modal-err" class="error-msg hidden"></p>
+    <div class="modal-header"><h3>Suggest Replacement</h3>
+      <button class="modal-close" onclick="closeModal('replace-modal')">✕</button></div>
+    <p style="color:var(--muted);font-size:.9rem;margin-bottom:1rem">Select a replacement:</p>
+    <div id="replace-list" style="display:flex;flex-direction:column;gap:.6rem;max-height:300px;overflow-y:auto"></div>
+    <input type="hidden" id="replace-aid"/>
+    <div class="modal-footer"><button class="btn-outline" onclick="closeModal('replace-modal')">Cancel</button></div>
   </div>
 </div>
 
-<!-- Replacement Modal -->
-<div id="replace-modal" class="modal-overlay hidden">
+<!-- Driver Modal -->
+<div id="driver-modal" class="modal-overlay hidden">
   <div class="modal">
-    <div class="modal-header">
-      <h3>Suggest Replacement</h3>
-      <button class="modal-close" onclick="closeModal('replace-modal')">✕</button>
-    </div>
-    <p class="modal-info">Select a replacement teacher:</p>
-    <div id="replace-list" class="replace-list"></div>
-    <input type="hidden" id="replace-assignment-id"/>
+    <div class="modal-header"><h3 id="d-modal-title">Add Driver</h3>
+      <button class="modal-close" onclick="closeModal('driver-modal')">✕</button></div>
+    <input type="hidden" id="d-id"/>
+    <div class="form-group"><label>Full Name</label><input type="text" id="d-name"/></div>
+    <div class="form-group"><label>Phone Number</label><input type="tel" id="d-phone" placeholder="0712345678"/></div>
+    <div class="form-group"><label>License Number</label><input type="text" id="d-license"/></div>
+    <div class="form-group"><label>Password</label><input type="password" id="d-password" placeholder="Leave blank to keep current"/></div>
+    <div class="form-group"><label>Assign to Route</label>
+      <select id="d-route"><option value="">-- Select Route --</option></select></div>
+    <div class="form-group toggle-row"><label>Active</label>
+      <label class="toggle"><input type="checkbox" id="d-active" checked/><span class="slider"></span></label></div>
     <div class="modal-footer">
-      <button class="btn-outline" onclick="closeModal('replace-modal')">Cancel</button>
+      <button class="btn-outline" onclick="closeModal('driver-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveDriver()">Save</button>
     </div>
+    <p id="d-err" class="error-msg hidden"></p>
+  </div>
+</div>
+
+<!-- Parent Modal -->
+<div id="parent-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header"><h3 id="p-modal-title">Add Parent</h3>
+      <button class="modal-close" onclick="closeModal('parent-modal')">✕</button></div>
+    <input type="hidden" id="p-id"/>
+    <div class="form-group"><label>Parent Name</label><input type="text" id="p-name"/></div>
+    <div class="form-group"><label>Phone Number</label><input type="tel" id="p-phone" placeholder="0712345678"/></div>
+    <div class="form-group"><label>Password</label><input type="password" id="p-password" placeholder="Leave blank to keep current"/></div>
+    <div class="form-group"><label>Child's Name</label><input type="text" id="p-child-name"/></div>
+    <div class="form-group"><label>Child's Class</label><input type="text" id="p-child-class" placeholder="e.g. Grade 3A"/></div>
+    <div class="form-group"><label>Assign to Route</label>
+      <select id="p-route"><option value="">-- Select Route --</option></select></div>
+    <div class="form-group toggle-row"><label>Active</label>
+      <label class="toggle"><input type="checkbox" id="p-active" checked/><span class="slider"></span></label></div>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeModal('parent-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveParent()">Save</button>
+    </div>
+    <p id="p-err" class="error-msg hidden"></p>
   </div>
 </div>
 
