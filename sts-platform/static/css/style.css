@@ -44,6 +44,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--off);color:var
 .btn-sm{padding:.35rem .7rem;border-radius:5px;font-size:.8rem;font-weight:600;cursor:pointer;border:none;}
 .btn-edit{background:var(--sky-light);color:var(--sky-dark);}
 .btn-del{background:var(--red-light);color:var(--red-dark);}
+.btn-danger{background:var(--red-light);color:var(--red-dark);}
 .btn-warn{background:#FEF9E7;color:#B7950B;}
 .btn-success{background:#EAFAF1;color:#1E8449;}
 .error-msg{color:var(--red);font-size:.85rem;margin-top:.5rem;}

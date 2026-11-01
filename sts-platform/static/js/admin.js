@@ -260,7 +260,7 @@ async function loadDrivers() {
   `).join('');
 }
 
-function openAddDriver() {
+async function openAddDriver() {
   document.getElementById('d-modal-title').textContent = 'Add Driver';
   document.getElementById('d-id').value = '';
   document.getElementById('d-name').value = '';
@@ -272,18 +272,17 @@ function openAddDriver() {
   document.getElementById('d-active').checked = true;
   document.getElementById('d-err').classList.add('hidden');
   
-  // Populate route dropdown
-  populateRouteDropdown('d-route');
-  
+  await populateRouteDropdown('d-route');
   document.getElementById('driver-modal').classList.remove('hidden');
 }
 
 async function editDriver(id) {
+  // Read from already-loaded table row data via the drivers API
   const r = await fetch('/api/admin/drivers');
   const drivers = await r.json();
   const driver = drivers.find(d => d.id === id);
   if (!driver) return;
-  
+
   document.getElementById('d-modal-title').textContent = 'Edit Driver';
   document.getElementById('d-id').value = driver.id;
   document.getElementById('d-name').value = driver.name;
@@ -291,12 +290,10 @@ async function editDriver(id) {
   document.getElementById('d-license').value = driver.license || '';
   document.getElementById('d-password').value = '';
   document.getElementById('d-password').placeholder = 'Leave blank to keep current';
-  document.getElementById('d-route').value = driver.assigned_route_id || '';
   document.getElementById('d-active').checked = driver.active;
   document.getElementById('d-err').classList.add('hidden');
-  
-  populateRouteDropdown('d-route');
-  
+
+  await populateRouteDropdown('d-route', driver.assigned_route_id);
   document.getElementById('driver-modal').classList.remove('hidden');
 }
 
@@ -407,8 +404,7 @@ function openAddParent() {
   document.getElementById('p-active').checked = true;
   document.getElementById('p-err').classList.add('hidden');
   
-  populateRouteDropdown('p-route');
-  
+  await populateRouteDropdown('p-route');
   document.getElementById('parent-modal').classList.remove('hidden');
 }
 
@@ -417,7 +413,7 @@ async function editParent(id) {
   const parents = await r.json();
   const parent = parents.find(p => p.id === id);
   if (!parent) return;
-  
+
   document.getElementById('p-modal-title').textContent = 'Edit Parent';
   document.getElementById('p-id').value = parent.id;
   document.getElementById('p-name').value = parent.name;
@@ -426,12 +422,10 @@ async function editParent(id) {
   document.getElementById('p-password').placeholder = 'Leave blank to keep current';
   document.getElementById('p-child-name').value = parent.child_name || '';
   document.getElementById('p-child-class').value = parent.child_class || '';
-  document.getElementById('p-route').value = parent.assigned_route_id || '';
   document.getElementById('p-active').checked = parent.active;
   document.getElementById('p-err').classList.add('hidden');
-  
-  populateRouteDropdown('p-route');
-  
+
+  await populateRouteDropdown('p-route', parent.assigned_route_id);
   document.getElementById('parent-modal').classList.remove('hidden');
 }
 
@@ -502,16 +496,17 @@ async function deleteParent(id, name) {
   }
 }
 
-// Helper function to populate route dropdowns
-async function populateRouteDropdown(selectId) {
+// Helper function to populate route dropdowns (resets before adding to avoid duplicates)
+async function populateRouteDropdown(selectId, selectedId) {
   const r = await fetch('/api/routes');
   const routes = await r.json();
   const select = document.getElementById(selectId);
-  
+  select.innerHTML = '<option value="">-- Select Route --</option>';
   routes.forEach(route => {
     const opt = document.createElement('option');
     opt.value = route.id;
     opt.textContent = `${route.name} (${route.is_morning ? 'Morning' : 'Evening'})`;
+    if (selectedId && route.id == selectedId) opt.selected = true;
     select.appendChild(opt);
   });
 }
