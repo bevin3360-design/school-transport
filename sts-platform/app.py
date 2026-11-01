@@ -16,14 +16,14 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'STS-PLATFORM-2026-SUPERKEY')
 
 # ── DATABASE: PostgreSQL in production, SQLite locally ──
-DATABASE_URL = os.environ.get('DATABASE_URL', '')
+DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
 if DATABASE_URL:
     # Render gives postgres:// but SQLAlchemy needs postgresql://
     if DATABASE_URL.startswith('postgres://'):
         DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 else:
-    # Local development — use SQLite
+    # No DATABASE_URL — use SQLite (works on Render free tier too)
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            'instance', 'sts_platform.db')
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
