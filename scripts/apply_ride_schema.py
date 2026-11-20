@@ -42,10 +42,17 @@ with psycopg.connect(DATABASE_URL) as connection:
         else:
             with ClientCursor(connection) as migration_cursor:
                 migration_cursor.execute(migration_sql)
-            cursor.execute('SELECT postgis_full_version()')
-            postgis_version = cursor.fetchone()[0]
+            cursor.execute("""
+                SELECT e.extversion, n.nspname
+                FROM pg_extension e
+                JOIN pg_namespace n ON n.oid = e.extnamespace
+                WHERE e.extname = 'postgis'
+            """)
+            postgis = cursor.fetchone()
+            if not postgis:
+                raise SystemExit('PostGIS extension is not installed in this database.')
             cursor.execute(
                 'INSERT INTO ride_hailing.schema_migrations (version) VALUES (%s)',
                 (VERSION,)
             )
-            print(f'Applied {VERSION}; {postgis_version}')
+            print(f'Applied {VERSION}; PostGIS {postgis[0]} in schema {postgis[1]}')
