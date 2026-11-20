@@ -40,7 +40,7 @@ with psycopg.connect(DATABASE_URL) as connection:
         if cursor.fetchone():
             print(f'Ride-hailing schema {VERSION} is already applied.')
         else:
-            with connection.cursor(cursor_factory=ClientCursor) as migration_cursor:
+            with ClientCursor(connection) as migration_cursor:
                 migration_cursor.execute(migration_sql)
             cursor.execute('SELECT postgis_full_version()')
             postgis_version = cursor.fetchone()[0]
