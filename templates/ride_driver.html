@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Driver | School Transport</title>
+  <style>
+    :root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#14231d;background:#f2f6f3}
+    *{box-sizing:border-box}body{margin:0}header{background:#123d2c;color:#fff;padding:18px max(22px,calc((100% - 1050px)/2));display:flex;justify-content:space-between;align-items:center}
+    main{max-width:1050px;margin:26px auto;padding:0 20px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    section{background:#fff;border:1px solid #dfe8e2;border-radius:16px;padding:22px}h1{font-size:25px;margin:0 0 6px}h2{font-size:18px;margin:0 0 14px}
+    .intro{grid-column:1/-1;color:#607169}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    label{display:block;font-size:13px;font-weight:650;margin:13px 0 6px}input,select,button{font:inherit}
+    input,select{width:100%;padding:11px;border:1px solid #ccd9d0;border-radius:9px}
+    button{cursor:pointer;border:0;border-radius:9px;padding:11px 15px;background:#126b46;color:#fff;font-weight:650}
+    button.secondary{background:#edf3ef;color:#254d3d}button.danger{background:#a82d2d}
+    button:disabled{opacity:.55;cursor:not-allowed}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+    .card{border-top:1px solid #e5ece7;padding:14px 0}.card:first-child{border:0}.pill{display:inline-block;background:#e8f4ec;color:#126b46;border-radius:20px;padding:4px 9px;font-size:12px;font-weight:700}
+    .muted{color:#607169;font-size:13px}.error{color:#b42318}.hidden{display:none!important}.code{letter-spacing:.18em;font-size:20px}
+    @media(max-width:720px){main{grid-template-columns:1fr}.intro{grid-column:auto}.row{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header><strong>School Transport · Driver</strong><button class="secondary" id="logout">Sign out</button></header>
+<main>
+  <div class="intro"><h1>Driver centre</h1><div>Complete verification, go online, and accept nearby ride offers.</div></div>
+  <section><h2>Driver profile</h2><div id="profile" class="muted">Loading…</div>
+    <div id="vehicleForm">
+      <label for="vehicleType">Vehicle type</label><select id="vehicleType"></select>
+      <div class="row"><div><label for="plate">Plate number</label><input id="plate" maxlength="20"></div><div><label for="color">Color</label><input id="color" maxlength="40"></div></div>
+      <div class="row"><div><label for="make">Make</label><input id="make" maxlength="80"></div><div><label for="model">Model</label><input id="model" maxlength="80"></div></div>
+      <label for="year">Year</label><input id="year" type="number" min="1950" max="2100">
+      <div class="row"><div><label for="insuranceExpires">Insurance expiry</label><input id="insuranceExpires" type="date"></div><div><label for="inspectionExpires">Inspection expiry</label><input id="inspectionExpires" type="date"></div></div>
+      <div class="actions"><button id="addVehicle">Submit vehicle for review</button></div><p class="error" id="vehicleError"></p>
+    </div>
+    <div class="actions"><button id="goOnline">Go online</button><button class="secondary" id="goOffline">Go offline</button></div><p id="locationStatus" class="muted"></p>
+  </section>
+  <section><h2>Ride offers</h2><div id="offers" class="muted">No new offers.</div></section>
+  <section><h2>Current ride</h2><div id="activeRide" class="muted">No active ride.</div></section>
+  <section><h2>Verification documents</h2><p class="muted">Identity, licence, vehicle and other required files must be uploaded to configured private object storage before they can be reviewed. Contact support if document storage has not been configured.</p></section>
+  <section><h2>Contact support</h2>
+    <label for="ticketSubject">Subject</label><input id="ticketSubject" maxlength="200">
+    <label for="ticketMessage">Message</label><input id="ticketMessage" maxlength="4000">
+    <div class="actions"><button id="createTicket">Send to support</button></div><p id="ticketError" class="error"></p>
+  </section>
+</main>
+<script>
+  const activeStatuses=['driver_assigned','driver_arrived','in_progress'];
+  let activeRideId=null;
+  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  async function api(url,options={}){
+    const response=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});
+    const isJson=(response.headers.get('content-type')||'').includes('application/json');
+    const data=isJson?await response.json():{};
+    if(!response.ok)throw new Error(data.error||`Server returned HTTP ${response.status}`);
+    if(!isJson)throw new Error('Unexpected non-JSON response from server');
+    return data;
+  }
+  async function loadProfile(){
+    const [profile,types]=await Promise.all([api('/api/rides/driver/profile'),api('/api/rides/vehicle-types')]);
+    document.querySelector('#profile').innerHTML=`<div class="card"><span class="pill">${esc(profile.verification_status||'not started')}</span><p>Availability: ${esc(profile.availability||'offline')}</p>${profile.plate_number?`<p>${esc(profile.color||'')} ${esc(profile.make||'')} ${esc(profile.model||'')} · ${esc(profile.plate_number)} · ${esc(profile.vehicle_status||'pending')}</p>`:''}${profile.rejection_reason?`<p class="error">${esc(profile.rejection_reason)}</p>`:''}</div>`;
+    document.querySelector('#vehicleType').innerHTML=types.map(type=>`<option value="${type.id}">${esc(type.display_name)} · ${type.seats} seats</option>`).join('');
+  }
+  async function loadOffers(){
+    const offers=await api('/api/rides/driver/offers');
+    document.querySelector('#offers').innerHTML=offers.map(offer=>`<div class="card"><strong>${esc(offer.rider_name)}</strong><p>${esc(offer.pickup_address||'Pickup')} → ${esc(offer.dropoff_address||'Destination')}</p><p class="muted">${offer.distance_to_pickup_m} m away · ETA ${Math.ceil(offer.eta_to_pickup_s/60)} min</p><div class="actions"><button class="accept" data-id="${esc(offer.offer_id)}">Accept</button><button class="secondary decline" data-id="${esc(offer.offer_id)}">Decline</button></div></div>`).join('')||'<p class="muted">No new offers.</p>';
+  }
+  async function loadActiveRide(){
+    const rides=await api('/api/rides'),ride=rides.find(item=>activeStatuses.includes(item.status));
+    activeRideId=ride?.id||null;
+    const target=document.querySelector('#activeRide');
+    if(!ride){target.textContent='No active ride.';return}
+    const detail=await api('/api/rides/'+ride.id);
+    target.innerHTML=`<div class="card"><span class="pill">${esc(detail.status)}</span><p>${esc(detail.pickup_address||'Pickup')} → ${esc(detail.dropoff_address||'Destination')}</p>${detail.status==='driver_assigned'?'<button id="arrive">I have arrived</button>':''}${detail.status==='driver_arrived'?'<label for="verifyCode">Rider verification code</label><input id="verifyCode" inputmode="numeric" maxlength="4"><button id="startRide">Start trip</button>':''}${detail.status==='in_progress'?'<button id="completeRide">Complete trip</button>':''}<div class="actions"><button class="secondary" id="shareRide">Share trip</button><button class="danger" id="sosRide">SOS alert</button></div><p id="rideError" class="error"></p></div>`;
+    document.querySelector('#shareRide')?.addEventListener('click',async()=>{try{const share=await api(`/api/rides/${ride.id}/shares`,{method:'POST',body:JSON.stringify({expires_in:3600})});try{await navigator.clipboard.writeText(share.url);document.querySelector('#rideError').textContent='Trip link copied.'}catch{document.querySelector('#rideError').textContent=share.url}}catch(error){document.querySelector('#rideError').textContent=error.message}});
+    document.querySelector('#sosRide')?.addEventListener('click',async()=>{if(!confirm('Send an SOS alert to ride support?'))return;let coords={};try{const position=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{timeout:8000}));coords={latitude:position.coords.latitude,longitude:position.coords.longitude}}catch{}try{await api(`/api/rides/${ride.id}/sos`,{method:'POST',body:JSON.stringify(coords)});document.querySelector('#rideError').textContent=coords.latitude?'SOS sent with current location.':'SOS sent; no fresh location was available.'}catch(error){document.querySelector('#rideError').textContent=error.message}});
+    document.querySelector('#arrive')?.addEventListener('click',async()=>{try{await api(`/api/rides/${ride.id}/arrive`,{method:'POST',body:'{}'});await loadActiveRide()}catch(err){document.querySelector('#rideError').textContent=err.message}});
+    document.querySelector('#startRide')?.addEventListener('click',async()=>{try{await api(`/api/rides/${ride.id}/start`,{method:'POST',body:JSON.stringify({verification_code:document.querySelector('#verifyCode').value})});await loadActiveRide()}catch(err){document.querySelector('#rideError').textContent=err.message}});
+    document.querySelector('#completeRide')?.addEventListener('click',async()=>{try{const result=await api(`/api/rides/${ride.id}/complete`,{method:'POST',body:'{}'});target.textContent=`Trip complete · ${result.actual_distance_m} m · fare ${Number(result.final_fare).toFixed(2)}`;await loadProfile()}catch(err){document.querySelector('#rideError').textContent=err.message}});
+  }
+  document.querySelector('#offers').addEventListener('click',async event=>{const target=event.target;if(target.matches('.accept,.decline')){try{await api(`/api/rides/offers/${target.dataset.id}/${target.matches('.accept')?'accept':'decline'}`,{method:'POST',body:'{}'});await Promise.all([loadOffers(),loadActiveRide(),loadProfile()])}catch(err){alert(err.message)}}});
+  document.querySelector('#addVehicle').onclick=async()=>{const error=document.querySelector('#vehicleError');error.textContent='';try{await api('/api/rides/driver/vehicles',{method:'POST',body:JSON.stringify({vehicle_type_id:document.querySelector('#vehicleType').value,plate_number:document.querySelector('#plate').value,make:document.querySelector('#make').value,model:document.querySelector('#model').value,year:document.querySelector('#year').value,color:document.querySelector('#color').value,insurance_expires:document.querySelector('#insuranceExpires').value,inspection_expires:document.querySelector('#inspectionExpires').value})});await loadProfile()}catch(err){error.textContent=err.message}};
+  document.querySelector('#createTicket').onclick=async()=>{const error=document.querySelector('#ticketError');error.textContent='';try{await api('/api/rides/support/tickets',{method:'POST',body:JSON.stringify({subject:document.querySelector('#ticketSubject').value,message:document.querySelector('#ticketMessage').value,ride_id:activeRideId})});document.querySelector('#ticketMessage').value='';error.textContent='Support request sent.'}catch(err){error.textContent=err.message}};
+  async function setAvailability(availability){
+    await api('/api/rides/driver/availability',{method:'POST',body:JSON.stringify({availability})});
+    if(availability==='online')startLocation();else stopLocation();await loadProfile();
+  }
+  let watchId=null,lastSent=0;
+  function startLocation(){
+    if(!navigator.geolocation){document.querySelector('#locationStatus').textContent='This browser does not support GPS.';return}
+    if(watchId!==null)return;
+    watchId=navigator.geolocation.watchPosition(async position=>{
+      if(Date.now()-lastSent<5000)return;lastSent=Date.now();
+      try{await api('/api/rides/driver/location',{method:'POST',body:JSON.stringify({latitude:position.coords.latitude,longitude:position.coords.longitude,accuracy_m:position.coords.accuracy,speed_mps:position.coords.speed,heading:position.coords.heading})});document.querySelector('#locationStatus').textContent='Sharing your live location while online.'}
+      catch(err){document.querySelector('#locationStatus').textContent=err.message;stopLocation()}
+    },error=>{stopLocation();api('/api/rides/driver/availability',{method:'POST',body:JSON.stringify({availability:'offline'})}).then(()=>loadProfile()).then(()=>document.querySelector('#locationStatus').textContent='Location access failed. You were taken offline.').catch(()=>document.querySelector('#locationStatus').textContent=error.message+'; automatic offline status could not be updated.')},{enableHighAccuracy:true,maximumAge:5000,timeout:15000});
+  }
+  function stopLocation(){if(watchId!==null)navigator.geolocation.clearWatch(watchId);watchId=null;document.querySelector('#locationStatus').textContent='Location sharing is off.'}
+  document.querySelector('#goOnline').onclick=()=>setAvailability('online').catch(err=>document.querySelector('#locationStatus').textContent=err.message);
+  document.querySelector('#goOffline').onclick=()=>setAvailability('offline').catch(err=>document.querySelector('#locationStatus').textContent=err.message);
+  document.querySelector('#logout').onclick=async()=>{await api('/api/rides/auth/logout',{method:'POST'});location.href='/rides'};
+  (async()=>{try{await Promise.all([loadProfile(),loadOffers(),loadActiveRide()]);setInterval(()=>{loadOffers().catch(error=>document.querySelector('#offers').textContent=error.message);loadActiveRide().catch(error=>document.querySelector('#activeRide').textContent=error.message)},6000)}catch(error){document.querySelector('#profile').textContent=error.message}})();
+</script>
+</body>
+</html>

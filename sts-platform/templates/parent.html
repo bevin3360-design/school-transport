@@ -35,6 +35,37 @@
     <div id="child-info" style="margin-top:1rem;"></div>
   </div>
 
+  <div class="card">
+    <h2>📍 Pickup &amp; Drop-off Points</h2>
+    <p style="color:var(--muted);font-size:0.9rem;">
+      Save a landmark for each stop. You can also attach your current GPS location to help the driver find it.
+    </p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;">
+      <div>
+        <div class="form-group">
+          <label for="pickup-label">Pickup location or landmark</label>
+          <input id="pickup-label" type="text" maxlength="200" placeholder="e.g. Main gate, near the shops"/>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+          <button class="btn-secondary" type="button" onclick="useCurrentLocation('pickup')">📍 Use my location</button>
+          <button class="btn-primary" type="button" onclick="saveStop('pickup')">Save pickup</button>
+        </div>
+        <small id="pickup-location-status" style="display:block;margin-top:0.5rem;color:var(--muted);"></small>
+      </div>
+      <div>
+        <div class="form-group">
+          <label for="dropoff-label">Drop-off location or landmark</label>
+          <input id="dropoff-label" type="text" maxlength="200" placeholder="e.g. School front entrance"/>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+          <button class="btn-secondary" type="button" onclick="useCurrentLocation('dropoff')">📍 Use my location</button>
+          <button class="btn-primary" type="button" onclick="saveStop('dropoff')">Save drop-off</button>
+        </div>
+        <small id="dropoff-location-status" style="display:block;margin-top:0.5rem;color:var(--muted);"></small>
+      </div>
+    </div>
+  </div>
+
   <!-- Route & Staff Info -->
   <div class="card">
     <h2>🚌 Route Information</h2>
@@ -80,6 +111,9 @@ let map = null;
 let busMarker = null;
 let trackingInterval = null;
 let parentData = {};
+let savedStops = {pickup: null, dropoff: null};
+let stopCoordinates = {pickup: null, dropoff: null};
+let stopMarkers = {};
 
 async function init() {
   const sess = await fetch('/api/session').then(r=>r.json());
@@ -98,6 +132,7 @@ async function init() {
   initMap();
   
   // Load route and tracking info
+  await loadStops();
   await loadTrackingInfo();
   
   // Auto-refresh location every 15 seconds
@@ -191,9 +226,6 @@ async function loadTrackingInfo() {
       busMarker.bindPopup(`<strong>${data.driver.name}</strong><br>${data.route_name}<br>Updated: ${timeText}`).openPopup();
       map.setView(busPos, 15);
       
-      // Show alert buttons
-      document.getElementById('btn-alert-pickup').style.display = 'inline-block';
-      document.getElementById('btn-alert-dropoff').style.display = 'inline-block';
     } else {
       document.getElementById('tracking-status').innerHTML = `
         <div style="display:flex;align-items:center;gap:0.5rem;">
@@ -204,10 +236,8 @@ async function loadTrackingInfo() {
           </div>
         </div>`;
       
-      // Hide alert buttons when not tracking
-      document.getElementById('btn-alert-pickup').style.display = 'none';
-      document.getElementById('btn-alert-dropoff').style.display = 'none';
     }
+    updateAlertButtons();
     
     // Display driver contact
     if (data.driver.phone) {
@@ -231,6 +261,131 @@ async function loadTrackingInfo() {
   }
 }
 
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[char]));
+}
+
+function updateStopMarker(type, stop) {
+  if (!map) return;
+  const hasCoordinates = stop && stop.latitude !== null && stop.longitude !== null;
+  if (!hasCoordinates) {
+    if (stopMarkers[type]) {
+      map.removeLayer(stopMarkers[type]);
+      delete stopMarkers[type];
+    }
+    return;
+  }
+  const icon = type === 'pickup' ? '🏠' : '🏫';
+  const markerIcon = L.divIcon({html: `<div style="font-size:22px;">${icon}</div>`, className: '', iconSize: [28, 28], iconAnchor: [14, 14]});
+  const position = [stop.latitude, stop.longitude];
+  if (stopMarkers[type]) {
+    stopMarkers[type].setLatLng(position);
+    stopMarkers[type].setIcon(markerIcon);
+  } else {
+    stopMarkers[type] = L.marker(position, {icon: markerIcon}).addTo(map);
+  }
+  stopMarkers[type].bindPopup(`<strong>${type === 'pickup' ? 'Pickup' : 'Drop-off'}</strong><br>${escapeHtml(stop.label)}`);
+}
+
+function setStopStatus(type, message, isError) {
+  const status = document.getElementById(`${type}-location-status`);
+  status.textContent = message;
+  status.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+}
+
+async function loadStops() {
+  try {
+    const r = await fetch('/api/parent/stops');
+    const data = await r.json();
+    if (!r.ok) {
+      setStopStatus('pickup', data.error || 'Unable to load saved stops.', true);
+      return;
+    }
+    ['pickup', 'dropoff'].forEach(type => {
+      const stop = data[type];
+      savedStops[type] = stop;
+      if (stop) {
+        document.getElementById(`${type}-label`).value = stop.label;
+        if (stop.latitude !== null && stop.longitude !== null) {
+          stopCoordinates[type] = {latitude: stop.latitude, longitude: stop.longitude};
+          updateStopMarker(type, stop);
+        }
+        setStopStatus(type, stopCoordinates[type] ? 'Saved with GPS location.' : 'Saved. Add a GPS pin for more precise directions.');
+      } else {
+        setStopStatus(type, 'Not saved yet.');
+      }
+    });
+    updateAlertButtons();
+  } catch (err) {
+    setStopStatus('pickup', 'Could not load saved stops. Check your connection and refresh.', true);
+  }
+}
+
+function useCurrentLocation(type) {
+  if (!navigator.geolocation) {
+    setStopStatus(type, 'Location services are not available in this browser.', true);
+    return;
+  }
+  setStopStatus(type, 'Finding your location…');
+  navigator.geolocation.getCurrentPosition(position => {
+    stopCoordinates[type] = {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude
+    };
+    const input = document.getElementById(`${type}-label`);
+    if (!input.value.trim()) input.value = 'Current location';
+    setStopStatus(type, 'GPS location captured. Save to update this stop.');
+  }, error => {
+    const message = error.code === error.PERMISSION_DENIED
+      ? 'Allow location access in your browser, or enter a landmark without GPS.'
+      : 'Could not get your location. Try again or enter a landmark without GPS.';
+    setStopStatus(type, message, true);
+  }, {enableHighAccuracy: true, timeout: 10000, maximumAge: 0});
+}
+
+async function saveStop(type) {
+  const label = document.getElementById(`${type}-label`).value.trim();
+  if (!label) {
+    setStopStatus(type, 'Enter a location or landmark before saving.', true);
+    return;
+  }
+  try {
+    const coordinates = stopCoordinates[type];
+    const r = await fetch(`/api/parent/stops/${type}`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        label,
+        latitude: coordinates ? coordinates.latitude : null,
+        longitude: coordinates ? coordinates.longitude : null
+      })
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      setStopStatus(type, data.error || 'Could not save this stop.', true);
+      return;
+    }
+    savedStops[type] = data.stop;
+    updateStopMarker(type, data.stop);
+    setStopStatus(type, coordinates ? 'Saved with GPS location.' : 'Saved. Add a GPS pin for more precise directions.');
+    updateAlertButtons();
+  } catch (err) {
+    setStopStatus(type, 'Could not save this stop. Check your connection and try again.', true);
+  }
+}
+
+function updateAlertButtons() {
+  ['pickup', 'dropoff'].forEach(type => {
+    const button = document.getElementById(`btn-alert-${type}`);
+    const tracking = Boolean(parentData.tracking);
+    button.style.display = tracking ? 'inline-block' : 'none';
+    button.disabled = tracking && !savedStops[type];
+    button.title = savedStops[type] ? savedStops[type].label : `Save your ${type} location first`;
+  });
+}
+
 async function refreshLocation() {
   const btn = event.target;
   btn.disabled = true;
@@ -246,8 +401,12 @@ async function refreshLocation() {
 
 async function alertDriver(type) {
   const typeText = type === 'pickup' ? 'Pickup' : 'Drop-off';
-  
-  if (!confirm(`Send ${typeText} alert to driver?\n\nThis will notify the driver that you're ready and waiting.`)) {
+  const stop = savedStops[type];
+  if (!stop) {
+    setStopStatus(type, `Save your ${type} location before sending an alert.`, true);
+    return;
+  }
+  if (!confirm(`Tell the driver you're ready at ${stop.label} for ${typeText.toLowerCase()}?`)) {
     return;
   }
   
@@ -261,7 +420,7 @@ async function alertDriver(type) {
     const data = await r.json();
     
     if (r.ok) {
-      alert(`✓ Alert sent to ${data.message.split('driver ')[1]}`);
+      alert(`✓ ${typeText} alert sent to the driver at ${stop.label}.`);
     } else {
       alert('Error: ' + (data.error || 'Could not send alert'));
     }

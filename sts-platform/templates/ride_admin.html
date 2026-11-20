@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ride operations | School Transport</title>
+  <style>
+    :root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#14231d;background:#f2f6f3}
+    *{box-sizing:border-box}body{margin:0}header{background:#123d2c;color:#fff;padding:18px max(22px,calc((100% - 1150px)/2));display:flex;justify-content:space-between;align-items:center}
+    main{max-width:1150px;margin:26px auto;padding:0 20px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+    section{background:#fff;border:1px solid #dfe8e2;border-radius:16px;padding:22px;min-width:0}h1{font-size:25px;margin:0 0 6px}h2{font-size:18px;margin:0 0 14px}
+    .intro{grid-column:1/-1;color:#607169}.counts{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.count{padding:12px;background:#eff5f1;border-radius:10px}.count strong{display:block;font-size:22px}
+    label{display:block;font-size:13px;font-weight:650;margin:13px 0 6px}input,select,textarea,button{font:inherit}
+    input,select,textarea{width:100%;padding:10px;border:1px solid #ccd9d0;border-radius:9px}
+    textarea{min-height:110px;font-family:ui-monospace,monospace;font-size:12px}
+    button{cursor:pointer;border:0;border-radius:9px;padding:10px 14px;background:#126b46;color:#fff;font-weight:650}
+    button.secondary{background:#edf3ef;color:#254d3d}button.danger{background:#a82d2d}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
+    .card{border-top:1px solid #e5ece7;padding:13px 0;overflow-wrap:anywhere}.card:first-child{border:0}.muted{color:#607169;font-size:13px}.error{color:#b42318}
+    .pill{display:inline-block;background:#e8f4ec;color:#126b46;border-radius:20px;padding:4px 9px;font-size:12px;font-weight:700}
+    @media(max-width:780px){main{grid-template-columns:1fr}.intro{grid-column:auto}.counts{grid-template-columns:repeat(2,1fr)}.row{grid-template-columns:1fr}}
+  </style>
+</head>
+<body data-can-manage="{{ 'true' if can_manage else 'false' }}">
+<header><strong>School Transport · Ride operations</strong><button class="secondary" id="logout">Sign out</button></header>
+<main>
+  <div class="intro"><h1>Ride operations</h1><div>Manage driver verification, service coverage, fares, safety alerts and support.</div></div>
+  <section><h2>Overview</h2><div id="counts" class="counts"></div><div id="recentRides"></div></section>
+  <section><h2>Driver verification</h2><div id="drivers" class="muted">Loading…</div></section>
+  <section data-admin-only><h2>Service areas</h2><p class="muted">Paste a GeoJSON Polygon or MultiPolygon in WGS84 longitude/latitude coordinates. Configure service coverage before accepting ride requests.</p>
+    <label for="areaName">Area name</label><input id="areaName" maxlength="160" placeholder="Nairobi">
+    <label for="areaTimezone">IANA timezone</label><input id="areaTimezone" maxlength="80" placeholder="Africa/Nairobi">
+    <label for="areaGeometry">Boundary GeoJSON</label><textarea id="areaGeometry" placeholder='{"type":"Polygon","coordinates":[[[36.7,-1.4],[36.9,-1.4],[36.9,-1.2],[36.7,-1.2],[36.7,-1.4]]]} '></textarea>
+    <div class="actions"><button id="createArea">Add service area</button></div><p id="areaError" class="error"></p><div id="areas"></div>
+  </section>
+  <section data-admin-only><h2>Vehicle types and fares</h2>
+    <div class="row"><div><label for="typeCode">Code</label><input id="typeCode" placeholder="economy"></div><div><label for="typeName">Display name</label><input id="typeName" placeholder="Economy"></div></div>
+    <div class="row"><div><label for="seats">Seats</label><input id="seats" type="number" min="1" value="4"></div><div><label for="baseFare">Base fare</label><input id="baseFare" type="number" min="0" step="0.01"></div></div>
+    <div class="row"><div><label for="perKm">Fare per km</label><input id="perKm" type="number" min="0" step="0.01"></div><div><label for="perMinute">Fare per minute</label><input id="perMinute" type="number" min="0" step="0.01"></div></div>
+    <label for="minFare">Minimum fare</label><input id="minFare" type="number" min="0" step="0.01">
+    <div class="actions"><button id="createType">Add vehicle type</button></div><p id="typeError" class="error"></p><div id="types"></div>
+  </section>
+  <section data-admin-only><h2>Pricing zones</h2>
+    <label for="zoneArea">Service area</label><select id="zoneArea"></select>
+    <div class="row"><div><label for="zoneName">Zone name</label><input id="zoneName"></div><div><label for="multiplier">Fare multiplier (1-5)</label><input id="multiplier" type="number" min="1" max="5" step="0.01" value="1.2"></div></div>
+    <label for="zoneGeometry">Zone Polygon/MultiPolygon GeoJSON</label><textarea id="zoneGeometry"></textarea>
+    <div class="actions"><button id="createZone">Add pricing zone</button></div><p id="zoneError" class="error"></p><div id="zones"></div>
+  </section>
+  <section data-admin-only><h2>Pickup points</h2>
+    <label for="pointName">Name</label><input id="pointName">
+    <div class="row"><div><label for="pointLat">Latitude</label><input id="pointLat" inputmode="decimal"></div><div><label for="pointLng">Longitude</label><input id="pointLng" inputmode="decimal"></div></div>
+    <label for="pointArea">Service area (optional)</label><select id="pointArea"></select>
+    <div class="actions"><button id="createPoint">Add pickup point</button></div><p id="pointError" class="error"></p><div id="points"></div>
+  </section>
+  <section data-admin-only><h2>Matching settings</h2>
+    <label for="matchingRadius">Driver search radius (100–20,000 m)</label><input id="matchingRadius" type="number" min="100" max="20000">
+    <label for="offerTimeout">Offer timeout (10–120 seconds)</label><input id="offerTimeout" type="number" min="10" max="120">
+    <label for="maxOffers">Maximum drivers per request (1–25)</label><input id="maxOffers" type="number" min="1" max="25">
+    <div class="actions"><button id="saveMatchingSettings">Save matching settings</button></div><p id="settingsError" class="error"></p>
+  </section>
+  <section><h2>Safety alerts</h2><div id="sos"></div></section>
+  <section><h2>Support tickets</h2><div id="tickets"></div></section>
+</main>
+<script>
+  const canManage=document.body.dataset.canManage==='true';
+  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  async function api(url,options={}){
+    const response=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});
+    const isJson=(response.headers.get('content-type')||'').includes('application/json');
+    const data=isJson?await response.json():{};
+    if(!response.ok)throw new Error(data.error||`Server returned HTTP ${response.status}`);
+    if(!isJson)throw new Error('Unexpected non-JSON response from server');
+    return data;
+  }
+  async function loadDashboard(){
+    const data=await api('/api/rides/admin/dashboard');
+    const labels={active_rides:'Active rides',pending_drivers:'Pending drivers',pending_documents:'Pending docs',open_tickets:'Open tickets',open_sos:'Open SOS'};
+    document.querySelector('#counts').innerHTML=Object.entries(labels).map(([key,label])=>`<div class="count"><strong>${data.counts[key]}</strong><span class="muted">${label}</span></div>`).join('');
+    document.querySelector('#recentRides').innerHTML=data.recent_rides.map(ride=>`<div class="card"><span class="pill">${esc(ride.status)}</span><div>${esc(ride.rider_name)} · ${esc(ride.pickup_address||'Pickup')} → ${esc(ride.dropoff_address||'Destination')}</div></div>`).join('');
+  }
+  async function loadDrivers(){
+    const data=await api('/api/rides/admin/drivers');
+    document.querySelector('#drivers').innerHTML=data.drivers.map(driver=>`<div class="card"><strong>${esc(driver.full_name)}</strong> · ${esc(driver.phone_e164)}<div class="muted">${esc(driver.verification_status)} · ${esc(driver.make||'No vehicle')} ${esc(driver.model||'')} · ${esc(driver.plate_number||'')}</div>${driver.rejection_reason?`<div class="error">${esc(driver.rejection_reason)}</div>`:''}${canManage?`<div class="actions"><button class="approve-driver" data-id="${esc(driver.id)}">Approve driver</button><button class="reject-driver danger" data-id="${esc(driver.id)}">Reject driver</button>${driver.current_vehicle_id?`<button class="approve-vehicle secondary" data-id="${esc(driver.current_vehicle_id)}">Approve vehicle</button>`:''}</div>`:''}</div>`).join('')||'<p class="muted">No driver profiles yet.</p>';
+    document.querySelector('#drivers').innerHTML+=data.documents.map(doc=>`<div class="card">Document review · ${esc(doc.doc_type)} · ${esc(doc.status)}${canManage?`<div class="muted">Private key: ${esc(doc.storage_key)}</div><div class="actions"><button class="approve-doc" data-id="${esc(doc.id)}">Approve document</button><button class="reject-doc danger" data-id="${esc(doc.id)}">Reject document</button></div>`:''}</div>`).join('');
+  }
+  async function loadAreas(){
+    const areas=await api('/api/rides/admin/service-areas');
+    const options='<option value="">Select service area</option>'+areas.map(area=>`<option value="${area.id}">${esc(area.name)}</option>`).join('');
+    document.querySelector('#zoneArea').innerHTML=options;document.querySelector('#pointArea').innerHTML=options;
+    document.querySelector('#areas').innerHTML=areas.map(area=>`<div class="card"><strong>${esc(area.name)}</strong> · ${esc(area.timezone)} · ${area.active?'active':'inactive'} <button class="toggle-area secondary" data-id="${area.id}" data-active="${!area.active}">${area.active?'Disable':'Enable'}</button></div>`).join('')||'<p class="muted">No service area configured.</p>';
+  }
+  async function loadTypes(){const types=await api('/api/rides/admin/vehicle-types');document.querySelector('#types').innerHTML=types.map(type=>`<div class="card">${esc(type.display_name)} · ${esc(type.code)} · min ${Number(type.min_fare).toFixed(2)} · ${type.active?'active':'inactive'}</div>`).join('')}
+  async function loadZones(){const zones=await api('/api/rides/admin/pricing-zones');document.querySelector('#zones').innerHTML=zones.map(zone=>`<div class="card">${esc(zone.area_name)} / ${esc(zone.name)} · ×${zone.multiplier}</div>`).join('')}
+  async function loadPoints(){const points=await api('/api/rides/admin/pickup-points');document.querySelector('#points').innerHTML=points.map(point=>`<div class="card">${esc(point.name)} · ${point.latitude}, ${point.longitude}</div>`).join('')}
+  async function loadMatchingSettings(){const settings=await api('/api/rides/admin/settings');document.querySelector('#matchingRadius').value=settings.matching_radius_m;document.querySelector('#offerTimeout').value=settings.offer_timeout_seconds;document.querySelector('#maxOffers').value=settings.max_driver_offers}
+  async function loadSos(){
+    const events=await api('/api/rides/admin/sos');
+    document.querySelector('#sos').innerHTML=events.map(item=>`<div class="card"><strong>${esc(item.triggered_by_name)}</strong> · ${esc(item.status)}<div class="muted">${item.created_at?new Date(item.created_at).toLocaleString():''}${item.latitude?` · ${item.latitude}, ${item.longitude}`:''}</div>${['triggered','acknowledged'].includes(item.status)?`<button class="resolve-sos" data-id="${esc(item.id)}">Resolve</button>`:''}</div>`).join('')||'<p class="muted">No SOS alerts.</p>';
+  }
+  async function loadTickets(){
+    const tickets=await api('/api/rides/support/tickets');
+    document.querySelector('#tickets').innerHTML=tickets.map(ticket=>`<div class="card"><strong>${esc(ticket.subject)}</strong> · ${esc(ticket.status)}<div class="muted">${esc(ticket.user_name)} · ${ticket.message_count} messages</div><div class="actions"><button class="ticket-status secondary" data-id="${esc(ticket.id)}" data-status="in_progress">In progress</button><button class="ticket-status" data-id="${esc(ticket.id)}" data-status="resolved">Resolve</button></div></div>`).join('')||'<p class="muted">No support tickets.</p>';
+  }
+  document.querySelector('#drivers').addEventListener('click',async event=>{
+    const button=event.target;if(!button.dataset.id)return;
+    try{
+      if(button.matches('.approve-driver,.reject-driver')){const decision=button.matches('.approve-driver')?'approved':'rejected',reason=decision==='rejected'?prompt('Reason for rejection'):null;if(decision==='rejected'&&!reason)return;await api(`/api/rides/admin/drivers/${button.dataset.id}/review`,{method:'POST',body:JSON.stringify({decision,reason})})}
+      else if(button.matches('.approve-vehicle'))await api(`/api/rides/admin/vehicles/${button.dataset.id}/review`,{method:'POST',body:JSON.stringify({decision:'approved'})});
+      else if(button.matches('.approve-doc,.reject-doc')){const decision=button.matches('.approve-doc')?'approved':'rejected',reason=decision==='rejected'?prompt('Reason for rejection'):null;if(decision==='rejected'&&!reason)return;await api(`/api/rides/admin/documents/${button.dataset.id}/review`,{method:'POST',body:JSON.stringify({decision,reason})})}
+      await Promise.all([loadDrivers(),loadDashboard()]);
+    }catch(error){alert(error.message)}
+  });
+  document.querySelector('#areas').addEventListener('click',async event=>{if(!event.target.matches('.toggle-area'))return;try{await api(`/api/rides/admin/service-areas/${event.target.dataset.id}`,{method:'PUT',body:JSON.stringify({active:event.target.dataset.active==='true'})});await loadAreas()}catch(error){alert(error.message)}});
+  document.querySelector('#createArea').onclick=async()=>{const error=document.querySelector('#areaError');error.textContent='';try{await api('/api/rides/admin/service-areas',{method:'POST',body:JSON.stringify({name:document.querySelector('#areaName').value,timezone:document.querySelector('#areaTimezone').value,geometry:JSON.parse(document.querySelector('#areaGeometry').value)})});await loadAreas()}catch(err){error.textContent=err.message}};
+  document.querySelector('#createType').onclick=async()=>{const error=document.querySelector('#typeError');error.textContent='';try{await api('/api/rides/admin/vehicle-types',{method:'POST',body:JSON.stringify({code:document.querySelector('#typeCode').value,display_name:document.querySelector('#typeName').value,seats:document.querySelector('#seats').value,base_fare:document.querySelector('#baseFare').value,per_km:document.querySelector('#perKm').value,per_minute:document.querySelector('#perMinute').value,min_fare:document.querySelector('#minFare').value})});await loadTypes()}catch(err){error.textContent=err.message}};
+  document.querySelector('#createZone').onclick=async()=>{const error=document.querySelector('#zoneError');error.textContent='';try{await api('/api/rides/admin/pricing-zones',{method:'POST',body:JSON.stringify({area_id:document.querySelector('#zoneArea').value,name:document.querySelector('#zoneName').value,multiplier:document.querySelector('#multiplier').value,geometry:JSON.parse(document.querySelector('#zoneGeometry').value)})});await loadZones()}catch(err){error.textContent=err.message}};
+  document.querySelector('#createPoint').onclick=async()=>{const error=document.querySelector('#pointError');error.textContent='';try{await api('/api/rides/admin/pickup-points',{method:'POST',body:JSON.stringify({name:document.querySelector('#pointName').value,latitude:document.querySelector('#pointLat').value,longitude:document.querySelector('#pointLng').value,area_id:document.querySelector('#pointArea').value||null})});await loadPoints()}catch(err){error.textContent=err.message}};
+  document.querySelector('#saveMatchingSettings').onclick=async()=>{const error=document.querySelector('#settingsError');error.textContent='';const values={matching_radius_m:document.querySelector('#matchingRadius').value,offer_timeout_seconds:document.querySelector('#offerTimeout').value,max_driver_offers:document.querySelector('#maxOffers').value};try{for(const [key,value] of Object.entries(values))await api(`/api/rides/admin/settings/${key}`,{method:'PUT',body:JSON.stringify({value})});error.textContent='Matching settings saved.'}catch(err){error.textContent=err.message}};
+  document.querySelector('#sos').addEventListener('click',async event=>{if(!event.target.matches('.resolve-sos'))return;const notes=prompt('Resolution notes (optional)')||'';try{await api(`/api/rides/admin/sos/${event.target.dataset.id}/resolve`,{method:'POST',body:JSON.stringify({notes})});await Promise.all([loadSos(),loadDashboard()])}catch(error){alert(error.message)}});
+  document.querySelector('#tickets').addEventListener('click',async event=>{if(!event.target.matches('.ticket-status'))return;try{await api(`/api/rides/admin/tickets/${event.target.dataset.id}/status`,{method:'POST',body:JSON.stringify({status:event.target.dataset.status})});await Promise.all([loadTickets(),loadDashboard()])}catch(error){alert(error.message)}});
+  document.querySelector('#logout').onclick=async()=>{await api('/api/rides/auth/logout',{method:'POST'});location.href='/rides'};
+  document.querySelectorAll('[data-admin-only]').forEach(section=>{if(!canManage)section.hidden=true});
+  (async()=>{try{const loads=[loadDashboard(),loadDrivers(),loadSos(),loadTickets()];if(canManage)loads.push(loadAreas(),loadTypes(),loadZones(),loadPoints(),loadMatchingSettings());await Promise.all(loads);setInterval(()=>Promise.all([loadDashboard(),loadDrivers(),loadSos(),loadTickets()]).catch(error=>document.querySelector('.intro').textContent=error.message),15000)}catch(error){document.querySelector('.intro').textContent=error.message}})();
+</script>
+</body>
+</html>

@@ -5,12 +5,13 @@ Payment: M-Pesa to 0753538323
 Trial: 30 days free per school
 """
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
-from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, date, timedelta
 from functools import wraps
+import math
 import os, re, json
+from extensions import db
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'STS-PLATFORM-2026-SUPERKEY')
@@ -21,6 +22,10 @@ if DATABASE_URL:
     # Render gives postgres:// but SQLAlchemy needs postgresql://
     if DATABASE_URL.startswith('postgres://'):
         DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    if DATABASE_URL.startswith('postgresql://'):
+        DATABASE_URL = DATABASE_URL.replace(
+            'postgresql://', 'postgresql+psycopg://', 1
+        )
     app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 else:
     # No DATABASE_URL — use SQLite (works on Render free tier too)
@@ -32,7 +37,7 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 CORS(app)
-db = SQLAlchemy(app)
+db.init_app(app)
 
 # ── PAYMENT CONFIG ──────────────────────
 MPESA_NUMBER = "0753538323"
@@ -202,6 +207,20 @@ class Parent(db.Model):
     def set_password(self, pw): self.password_hash = generate_password_hash(pw)
     def check_password(self, pw): return check_password_hash(self.password_hash, pw)
 
+class ParentStop(db.Model):
+    __tablename__ = 'parent_stop'
+    __table_args__ = (
+        db.UniqueConstraint('parent_id', 'stop_type', name='uq_parent_stop_type'),
+    )
+    id         = db.Column(db.Integer, primary_key=True)
+    parent_id  = db.Column(db.Integer, db.ForeignKey('parent.id'), nullable=False)
+    stop_type  = db.Column(db.String(20), nullable=False)
+    label      = db.Column(db.String(200), nullable=False)
+    latitude   = db.Column(db.Float, nullable=True)
+    longitude  = db.Column(db.Float, nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    parent     = db.relationship('Parent', backref=db.backref('stops', cascade='all, delete-orphan'))
+
 class LocationHistory(db.Model):
     """Track GPS location history for analytics and playback"""
     id        = db.Column(db.Integer, primary_key=True)
@@ -225,7 +244,17 @@ class PickupAlert(db.Model):
     parent      = db.relationship('Parent', backref='pickup_alerts')
     driver      = db.relationship('Driver', backref='pickup_alerts')
     route       = db.relationship('Route', backref='pickup_alerts')
+    location    = db.relationship(
+        'PickupAlertLocation', back_populates='alert', uselist=False,
+        cascade='all, delete-orphan'
+    )
 
+class PickupAlertLocation(db.Model):
+    alert_id   = db.Column(db.Integer, db.ForeignKey('pickup_alert.id'), primary_key=True)
+    label      = db.Column(db.String(200), nullable=False)
+    latitude   = db.Column(db.Float, nullable=True)
+    longitude  = db.Column(db.Float, nullable=True)
+    alert      = db.relationship('PickupAlert', back_populates='location')
 
 
 # ════════════════════════════════════════
@@ -604,18 +633,86 @@ def parent_track_bus():
     
     return jsonify(response)
 
+def serialize_parent_stop(stop):
+    if not stop:
+        return None
+    return {
+        'stop_type': stop.stop_type,
+        'label': stop.label,
+        'latitude': stop.latitude,
+        'longitude': stop.longitude,
+        'updated_at': stop.updated_at.isoformat() if stop.updated_at else None
+    }
+
+@app.route('/api/parent/stops')
+def parent_get_stops():
+    if not session.get('parent_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+
+    parent_id = session['parent_id']
+    stops = ParentStop.query.filter_by(parent_id=parent_id).all()
+    return jsonify({
+        'pickup': serialize_parent_stop(next((s for s in stops if s.stop_type == 'pickup'), None)),
+        'dropoff': serialize_parent_stop(next((s for s in stops if s.stop_type == 'dropoff'), None))
+    })
+
+@app.route('/api/parent/stops/<stop_type>', methods=['PUT'])
+def parent_save_stop(stop_type):
+    if not session.get('parent_id'):
+        return jsonify({'error': 'Unauthorised'}), 403
+    if stop_type not in ('pickup', 'dropoff'):
+        return jsonify({'error': 'Stop type must be pickup or dropoff'}), 400
+
+    data = request.get_json(silent=True) or {}
+    label = sanitize(data.get('label', ''), 200)
+    if not label:
+        return jsonify({'error': 'Enter a pickup or drop-off location'}), 400
+
+    latitude = data.get('latitude')
+    longitude = data.get('longitude')
+    if (latitude is None) != (longitude is None):
+        return jsonify({'error': 'Provide both coordinates or neither'}), 400
+    if latitude is not None:
+        try:
+            latitude = float(latitude)
+            longitude = float(longitude)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Coordinates must be valid numbers'}), 400
+        if (not math.isfinite(latitude) or not math.isfinite(longitude)
+                or not -90 <= latitude <= 90 or not -180 <= longitude <= 180):
+            return jsonify({'error': 'Coordinates are outside the valid range'}), 400
+
+    stop = ParentStop.query.filter_by(
+        parent_id=session['parent_id'], stop_type=stop_type
+    ).first()
+    if not stop:
+        stop = ParentStop(parent_id=session['parent_id'], stop_type=stop_type)
+        db.session.add(stop)
+    stop.label = label
+    stop.latitude = latitude
+    stop.longitude = longitude
+    db.session.commit()
+    return jsonify({'success': True, 'stop': serialize_parent_stop(stop)})
+
 @app.route('/api/parent/alert-driver', methods=['POST'])
 def parent_alert_driver():
     """Parent notifies driver they're ready at pickup/dropoff point"""
     if not session.get('parent_id'):
         return jsonify({'error': 'Unauthorised'}), 403
     
-    data = request.get_json()
-    alert_type = data.get('alert_type', 'pickup')  # pickup or dropoff
+    data = request.get_json(silent=True) or {}
+    alert_type = data.get('alert_type', 'pickup')
+    if alert_type not in ('pickup', 'dropoff'):
+        return jsonify({'error': 'Alert type must be pickup or dropoff'}), 400
     
     parent = Parent.query.get(session['parent_id'])
     if not parent.assigned_route_id:
         return jsonify({'error': 'No route assigned'}), 400
+    stop = ParentStop.query.filter_by(
+        parent_id=parent.id, stop_type=alert_type
+    ).first()
+    if not stop:
+        return jsonify({'error': f'Save your {alert_type} location before sending an alert'}), 400
     
     driver = Driver.query.filter_by(
         school_id=parent.school_id,
@@ -634,6 +731,11 @@ def parent_alert_driver():
         alert_type=alert_type,
         status='pending'
     )
+    alert.location = PickupAlertLocation(
+        label=stop.label,
+        latitude=stop.latitude,
+        longitude=stop.longitude
+    )
     db.session.add(alert)
     db.session.commit()
     
@@ -643,7 +745,8 @@ def parent_alert_driver():
     return jsonify({
         'success': True,
         'message': f'Alert sent to driver {driver.name}',
-        'alert_id': alert.id
+        'alert_id': alert.id,
+        'location': serialize_parent_stop(stop)
     })
 
 @app.route('/api/driver/alerts')
@@ -665,6 +768,11 @@ def driver_get_alerts():
         'child_name': a.parent.child_name,
         'child_class': a.parent.child_class,
         'alert_type': a.alert_type,
+        'location': {
+            'label': a.location.label,
+            'latitude': a.location.latitude,
+            'longitude': a.location.longitude
+        } if a.location else None,
         'time_ago': (datetime.utcnow() - a.created_at).seconds // 60,  # minutes ago
         'created_at': a.created_at.isoformat()
     } for a in alerts])
@@ -765,7 +873,13 @@ def driver_route_info():
             'name': p.name,
             'phone': p.phone,
             'child_name': p.child_name,
-            'child_class': p.child_class
+            'child_class': p.child_class,
+            'pickup_location': serialize_parent_stop(ParentStop.query.filter_by(
+                parent_id=p.id, stop_type='pickup'
+            ).first()),
+            'dropoff_location': serialize_parent_stop(ParentStop.query.filter_by(
+                parent_id=p.id, stop_type='dropoff'
+            ).first())
         } for p in parents],
         'parent_count': len(parents)
     })
@@ -1634,6 +1748,10 @@ def init_db():
             db.session.add(PlatformSettings())
             db.session.commit()
             print('Platform settings initialised.')
+
+# Keep ride-hailing routes separate from the legacy school transport APIs.
+from ride_api import ride_bp
+app.register_blueprint(ride_bp)
 
 # Always initialise DB
 init_db()

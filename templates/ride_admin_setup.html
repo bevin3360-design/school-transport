@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ride administrator setup</title>
+  <style>
+    :root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#14231d;background:#f2f6f3}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}
+    main{width:min(460px,100%);background:#fff;border:1px solid #dfe8e2;border-radius:20px;padding:30px}
+    h1{margin:0 0 8px}p{color:#607169;line-height:1.55}label{display:block;font-size:13px;font-weight:650;margin:14px 0 6px}
+    input,select,button{font:inherit}input,select{width:100%;padding:11px;border:1px solid #ccd9d0;border-radius:9px}
+    button{cursor:pointer;border:0;border-radius:9px;padding:12px 16px;background:#126b46;color:#fff;font-weight:650;width:100%;margin-top:18px}
+    .error{color:#b42318;min-height:22px}.portal{display:block;margin-top:18px;color:#126b46}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Create ride administrator</h1>
+  <p>This setup is available only to a signed-in platform super administrator. The ride administrator will sign in at the ride portal.</p>
+  <form id="form">
+    <label for="name">Full name</label><input id="name" maxlength="160" required>
+    <label for="phone">Phone number (E.164)</label><input id="phone" type="tel" placeholder="+2547..." required>
+    <label for="role">Access level</label><select id="role"><option value="admin">Administrator</option><option value="support">Support</option></select>
+    <label for="password">Temporary password (at least 10 characters)</label><input id="password" type="password" minlength="10" maxlength="256" required>
+    <p id="error" class="error" role="alert"></p>
+    <button type="submit">Create account</button>
+  </form>
+  <a class="portal" href="/rides">← Back to ride portal</a>
+</main>
+<script>
+  document.querySelector('#form').addEventListener('submit',async event=>{
+    event.preventDefault();const error=document.querySelector('#error');error.textContent='';
+    try{
+      const response=await fetch('/api/rides/admin/accounts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({full_name:document.querySelector('#name').value.trim(),phone_e164:document.querySelector('#phone').value.trim(),role:document.querySelector('#role').value,password:document.querySelector('#password').value})});
+      const isJson=(response.headers.get('content-type')||'').includes('application/json');
+      const data=isJson?await response.json():{};
+      if(!response.ok)throw new Error(data.error||`Server returned HTTP ${response.status}`);
+      if(!isJson)throw new Error('Unexpected non-JSON response from server');
+      error.style.color='#126b46';error.textContent='Administrator account created. They can now sign in at /rides.';
+      event.target.reset();
+    }catch(err){error.style.color='';error.textContent=err.message}
+  });
+</script>
+</body>
+</html>
