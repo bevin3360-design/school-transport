@@ -12,9 +12,11 @@ SET search_path TO ride_hailing, public;
 -- =====================================================================
 
 -- ---------- 0. SETUP ----------
-CREATE EXTENSION IF NOT EXISTS postgis;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS citext;
+-- PostGIS must live where application sessions resolve it (public), not in
+-- ride_hailing, because runtime SQL uses unqualified ST_* and ::geometry.
+CREATE EXTENSION IF NOT EXISTS postgis SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS citext SCHEMA public;
 -- Optional, only if you run your own road graph:
 -- CREATE EXTENSION IF NOT EXISTS pgrouting;
 

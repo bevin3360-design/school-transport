@@ -27,6 +27,11 @@ if DATABASE_URL:
             'postgresql://', 'postgresql+psycopg://', 1
         )
     app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+    # PostGIS may be installed in ride_hailing rather than public; keep both
+    # on the search_path so ST_* functions and the geometry type resolve.
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'connect_args': {'options': '-csearch_path=public,ride_hailing'}
+    }
 else:
     # No DATABASE_URL — use SQLite (works on Render free tier too)
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
