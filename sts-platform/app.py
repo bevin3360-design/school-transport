@@ -11,6 +11,8 @@ from datetime import datetime, date, timedelta
 from functools import wraps
 import math
 import os, re, json, secrets
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from extensions import db
 
 app = Flask(__name__)
@@ -160,7 +162,7 @@ class DutyAssignment(db.Model):
 class Payment(db.Model):
     id          = db.Column(db.Integer, primary_key=True)
     school_id   = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=False)
-    mpesa_code  = db.Column(db.String(20), nullable=False)
+    mpesa_code  = db.Column(db.String(20), nullable=False, unique=True, index=True)
     amount      = db.Column(db.Integer, nullable=False)
     plan        = db.Column(db.String(20), nullable=False)
     phone       = db.Column(db.String(20))
@@ -1211,21 +1213,35 @@ def payment_info():
 def submit_payment():
     if not is_school_admin():
         return jsonify({'error': 'Unauthorised'}), 403
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     mpesa_code = sanitize(data.get('mpesa_code','').upper())
-    amount     = int(data.get('amount', 0))
-    plan       = sanitize(data.get('plan','basic'))
+    plan       = sanitize(data.get('plan','basic')).lower()
     phone      = sanitize(data.get('phone',''))
+    try:
+        amount = int(data.get('amount', 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Amount must be a whole number'}), 400
 
-    if not mpesa_code or not amount:
+    if not mpesa_code or amount <= 0:
         return jsonify({'error': 'M-Pesa code and amount required'}), 400
+    if plan not in PLANS:
+        return jsonify({'error': 'Unknown subscription plan'}), 400
+    if amount < PLANS[plan]['price']:
+        return jsonify({
+            'error': f"{plan.title()} plan costs KES {PLANS[plan]['price']}; "
+                     f"received KES {amount}"
+        }), 400
     if Payment.query.filter_by(mpesa_code=mpesa_code).first():
         return jsonify({'error': 'This M-Pesa code has already been submitted'}), 400
 
     p = Payment(school_id=current_school_id(), mpesa_code=mpesa_code,
                 amount=amount, plan=plan, phone=phone, status='pending')
     db.session.add(p)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'error': 'This M-Pesa code has already been submitted'}), 400
     log_action(current_school_id(), 'admin', session.get('school_name'),
                f'Payment submitted: {mpesa_code} KES {amount} for {plan}')
     return jsonify({'success': True,
@@ -1281,6 +1297,8 @@ def super_payments():
 def verify_payment(pid):
     if not is_super(): return jsonify({'error':'Unauthorised'}), 403
     p = Payment.query.get_or_404(pid)
+    if p.status != 'pending':
+        return jsonify({'error': f'Payment is already {p.status}'}), 409
     p.status = 'verified'
     p.verified_at = datetime.utcnow()
     # Activate school
@@ -1301,6 +1319,8 @@ def verify_payment(pid):
 def reject_payment(pid):
     if not is_super(): return jsonify({'error':'Unauthorised'}), 403
     p = Payment.query.get_or_404(pid)
+    if p.status != 'pending':
+        return jsonify({'error': f'Payment is already {p.status}'}), 409
     p.status = 'rejected'
     db.session.commit()
     return jsonify({'success': True})
@@ -1766,6 +1786,14 @@ def security_headers(response):
 def init_db():
     with app.app_context():
         db.create_all()
+        try:
+            with db.engine.begin() as connection:
+                connection.execute(text(
+                    'CREATE UNIQUE INDEX IF NOT EXISTS ux_payment_mpesa_code '
+                    'ON payment (mpesa_code)'
+                ))
+        except SQLAlchemyError as exc:
+            print(f'WARNING: could not enforce unique payment codes: {exc}', flush=True)
         if not SuperAdmin.query.first():
             bootstrap_username = os.environ.get('SUPERADMIN_USERNAME', '').strip()
             bootstrap_password = os.environ.get('SUPERADMIN_PASSWORD', '')
