@@ -1423,21 +1423,16 @@ def super_reset_admin_password(sid):
     return jsonify({'success': True, 'message': f'Password reset for {admin.username}'})
 
 @app.route('/api/super/school/<int:sid>/delete', methods=['DELETE'])
-def super_delete_school(sid):
+def super_archive_school(sid):
     if not is_super(): return jsonify({'error':'Unauthorised'}), 403
     s = School.query.get_or_404(sid)
-    name = s.name
-    # Delete all related records first
-    DutyAssignment.query.filter_by(school_id=sid).delete()
-    Payment.query.filter_by(school_id=sid).delete()
-    Route.query.filter_by(school_id=sid).delete()
-    Teacher.query.filter_by(school_id=sid).delete()
-    SchoolAdmin.query.filter_by(school_id=sid).delete()
-    AuditLog.query.filter_by(school_id=sid).delete()
-    db.session.delete(s)
+    # Archive, never delete: keep schools, rosters and payment history for retention.
+    s.status = 'suspended'
     db.session.commit()
-    log_action(None, 'super', session.get('super_name'), f'Deleted school: {name}')
-    return jsonify({'success': True})
+    log_action(None, 'super', session.get('super_name'),
+               f'Archived school: {s.name} (access suspended, data retained)')
+    return jsonify({'success': True, 'archived': True,
+                    'message': f'{s.name} archived. Records retained; use Activate to restore access.'})
 
 @app.route('/api/super/stats')
 def super_stats():

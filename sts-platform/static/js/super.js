@@ -94,7 +94,7 @@ async function loadSchools() {
           <button class="btn-sm btn-edit"    onclick="openEditSchool(${JSON.stringify(s).replace(/"/g,'&quot;')})">✏️ Edit</button>
           <button class="btn-sm btn-success" onclick="openActivate(${s.id},'${s.name}')">✅ Activate</button>
           <button class="btn-sm btn-warn"    onclick="openResetPw(${s.id},'${s.name}')">🔑 Reset PW</button>
-          <button class="btn-sm btn-del"     onclick="deleteSchool(${s.id},'${s.name}')">🗑️ Delete</button>
+          <button class="btn-sm btn-del"     onclick="deleteSchool(${s.id},'${s.name}')">🗄️ Archive</button>
         </div>
       </td>
     </tr>`).join('')
@@ -243,12 +243,11 @@ async function resetPassword() {
 
 // ── DELETE SCHOOL ─────────────────────
 async function deleteSchool(id, name) {
-  if (!confirm(`⚠️ DELETE "${name}"?\n\nThis will permanently remove the school, all teachers, routes, rosters, and payment history.\n\nThis cannot be undone.`)) return;
-  if (!confirm(`Are you absolutely sure you want to delete "${name}"?`)) return;
+  if (!confirm(`Archive "${name}"?\n\nAccess stops immediately for every admin, teacher, driver and parent. No records, rosters or payment history are deleted, and you can restore access with Activate.`)) return;
   const r = await fetch(`/api/super/school/${id}/delete`, {method:'DELETE'});
   const d = await r.json();
-  if (d.success) { loadSchools(); loadAll(); alert(`${name} has been deleted.`); }
-  else alert('Delete failed: ' + (d.error || 'Unknown error'));
+  if (d.success) { loadSchools(); loadAll(); alert(`${name} has been archived. Use Activate to restore it.`); }
+  else alert('Archive failed: ' + (d.error || 'Unknown error'));
 }
 
 // ── PAYMENTS ──────────────────────────
