@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import math
+import os
 import re
 import secrets
 import uuid
@@ -21,6 +22,19 @@ RIDE_SETTING_LIMITS = {
     'offer_timeout_seconds': (10, 120, 30),
     'max_driver_offers': (1, 25, 10)
 }
+
+
+def ride_hailing_enabled():
+    return os.environ.get('RIDE_HAILING_ENABLED') == '1'
+
+
+@ride_bp.before_request
+def require_ride_module_enabled():
+    if ride_hailing_enabled():
+        return None
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Ride-hailing is disabled'}), 404
+    return render_template('ride_access.html'), 404
 
 
 @ride_bp.before_request

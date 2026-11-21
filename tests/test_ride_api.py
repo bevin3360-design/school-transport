@@ -47,6 +47,14 @@ class RideApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertIn('PostGIS', response.json['error'])
 
+    def test_ride_hailing_is_disabled_without_the_feature_flag(self):
+        import ride_api
+        from unittest.mock import patch
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('RIDE_HAILING_ENABLED', None)
+            self.assertFalse(ride_api.ride_hailing_enabled())
+
 
 if __name__ == '__main__':
     unittest.main()
