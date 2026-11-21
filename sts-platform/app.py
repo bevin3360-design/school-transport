@@ -6,6 +6,8 @@ Trial: 30 days free per school
 """
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_cors import CORS
+from flask_wtf.csrf import CSRFProtect, generate_csrf
+from markupsafe import escape
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, date, timedelta
 from functools import wraps
@@ -39,6 +41,29 @@ app.config.update(
     ),
     PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
 )
+
+csrf = CSRFProtect(app)
+# Tests opt out through the environment; production keeps protection on.
+app.config['WTF_CSRF_ENABLED'] = os.environ.get('STS_DISABLE_CSRF') != '1'
+
+@app.after_request
+def add_csrf_to_pages(response):
+    """Expose the session token and the fetch helper to every HTML page."""
+    if (response.mimetype != 'text/html' or response.status_code != 200
+            or request.path.startswith('/static/')):
+        return response
+    html = response.get_data(as_text=True)
+    if '</head>' not in html or 'name="csrf-token"' in html:
+        return response
+    token = escape(generate_csrf())
+    html = html.replace(
+        '</head>',
+        f'<meta name="csrf-token" content="{token}">'
+        '<script src="/static/js/csrf.js"></script></head>',
+        1,
+    )
+    response.set_data(html)
+    return response
 
 # ── DATABASE: PostgreSQL in production, SQLite locally ──
 DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()

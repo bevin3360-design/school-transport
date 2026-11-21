@@ -8,3 +8,6 @@ sys.path.insert(0, str(PLATFORM_DIR))
 
 # Ride-hailing is off by default in production; opt in for its test module only.
 os.environ.setdefault('RIDE_HAILING_ENABLED', '1')
+
+# Ordinary tests exercise business logic; the CSRF test re-enables protection.
+os.environ.setdefault('STS_DISABLE_CSRF', '1')
