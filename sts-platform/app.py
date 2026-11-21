@@ -10,7 +10,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, date, timedelta
 from functools import wraps
 import math
-import os, re, json, secrets
+import os, re, json, secrets, threading, time
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from extensions import db
@@ -317,6 +317,44 @@ def password_error(password, username=''):
         return 'Password must not match the username'
     return None
 
+LOGIN_ATTEMPT_WINDOW = 15 * 60
+LOGIN_ATTEMPT_LIMIT = 8
+_login_attempts = {}
+_login_attempts_lock = threading.Lock()
+
+def login_blocked(scope, identifier):
+    key = (scope, str(identifier).strip().lower())
+    if not key[1]:
+        return False
+    cutoff = time.monotonic() - LOGIN_ATTEMPT_WINDOW
+    with _login_attempts_lock:
+        attempts = [t for t in _login_attempts.get(key, []) if t > cutoff]
+        if attempts:
+            _login_attempts[key] = attempts
+        else:
+            _login_attempts.pop(key, None)
+        return len(attempts) >= LOGIN_ATTEMPT_LIMIT
+
+def record_login_failure(scope, identifier):
+    key = (scope, str(identifier).strip().lower())
+    if not key[1]:
+        return
+    now = time.monotonic()
+    with _login_attempts_lock:
+        attempts = [t for t in _login_attempts.get(key, []) if t > now - LOGIN_ATTEMPT_WINDOW]
+        attempts.append(now)
+        _login_attempts[key] = attempts
+        if len(_login_attempts) > 10000:
+            cutoff = now - LOGIN_ATTEMPT_WINDOW
+            for k in [k for k, v in _login_attempts.items() if not v or v[-1] <= cutoff]:
+                _login_attempts.pop(k, None)
+
+def clear_login_failures(scope, identifier):
+    with _login_attempts_lock:
+        _login_attempts.pop((scope, str(identifier).strip().lower()), None)
+
+TOO_MANY_ATTEMPTS = ('Too many failed attempts. Try again in 15 minutes.', 429)
+
 def get_settings():
     """Always returns the single PlatformSettings row, creating it if missing."""
     s = PlatformSettings.query.first()
@@ -447,26 +485,34 @@ def parent_panel():
 # ════════════════════════════════════════
 @app.route('/api/super/login', methods=['POST'])
 def super_login():
-    data = request.get_json()
-    sa = SuperAdmin.query.filter_by(username=sanitize(data.get('username',''))).first()
+    data = request.get_json(silent=True) or {}
+    username = sanitize(data.get('username',''))
+    if login_blocked('super', username):
+        return jsonify({'success': False, 'message': TOO_MANY_ATTEMPTS[0]}), TOO_MANY_ATTEMPTS[1]
+    sa = SuperAdmin.query.filter_by(username=username).first()
     if sa and sa.check_password(data.get('password','')):
+        clear_login_failures('super', username)
         session['super_id'] = sa.id
         session['super_name'] = sa.username
         log_action(None, 'super', sa.username, 'Super admin login')
         return jsonify({'success': True})
+    record_login_failure('super', username)
     return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
 
 @app.route('/api/admin/login', methods=['POST'])
 def admin_login():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     username = sanitize(data.get('username',''))
     password = data.get('password','')
+    if login_blocked('admin', username):
+        return jsonify({'success': False, 'message': TOO_MANY_ATTEMPTS[0]}), TOO_MANY_ATTEMPTS[1]
     admin = SchoolAdmin.query.filter_by(username=username).first()
     if admin and admin.check_password(password):
         school = School.query.get(admin.school_id)
         if school.status == 'suspended':
             return jsonify({'success': False,
                 'message': 'School account suspended. Contact support.'}), 403
+        clear_login_failures('admin', username)
         session['school_admin_id'] = admin.id
         session['school_id'] = admin.school_id
         session['school_name'] = school.name
@@ -474,27 +520,34 @@ def admin_login():
         log_action(school.id, 'admin', username, 'Admin login')
         return jsonify({'success': True, 'school': school.name,
                         'role': admin.role, 'days_left': school.days_remaining()})
+    record_login_failure('admin', username)
     return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
 
 @app.route('/api/teacher/login', methods=['POST'])
 def teacher_login():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     code = sanitize(data.get('teaching_code',''))
     passcode = sanitize(data.get('passcode',''))
     school_code = sanitize(data.get('school_code',''))
+    attempt_key = f'{school_code}:{code}'
+    if login_blocked('teacher', attempt_key):
+        return jsonify({'success': False, 'message': TOO_MANY_ATTEMPTS[0]}), TOO_MANY_ATTEMPTS[1]
     school = School.query.filter_by(code=school_code).first()
     if not school or school.status == 'suspended':
+        record_login_failure('teacher', attempt_key)
         return jsonify({'success': False, 'message': 'School not found or suspended'}), 401
     teacher = Teacher.query.filter_by(
         school_id=school.id, teaching_code=code,
         passcode=passcode, authorised=True, active=True).first()
     if teacher:
+        clear_login_failures('teacher', attempt_key)
         session['teacher_id'] = teacher.id
         session['teacher_name'] = teacher.name
         session['school_id'] = school.id
         session['school_name'] = school.name
         log_action(school.id, 'teacher', teacher.name, 'Teacher login')
         return jsonify({'success': True, 'name': teacher.name, 'school': school.name})
+    record_login_failure('teacher', attempt_key)
     return jsonify({'success': False, 'message': 'Invalid code or not authorised'}), 401
 
 @app.route('/api/logout', methods=['POST'])
@@ -530,10 +583,13 @@ def check_session():
 
 @app.route('/api/driver/login', methods=['POST'])
 def driver_login():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     phone = sanitize(data.get('phone',''))
     password = data.get('password','')
     school_code = sanitize(data.get('school_code',''))
+    attempt_key = f'{school_code}:{phone}'
+    if login_blocked('driver', attempt_key):
+        return jsonify({'success': False, 'message': TOO_MANY_ATTEMPTS[0]}), TOO_MANY_ATTEMPTS[1]
     
     school = School.query.filter_by(code=school_code).first()
     if not school or school.status == 'suspended':
@@ -541,6 +597,7 @@ def driver_login():
     
     driver = Driver.query.filter_by(school_id=school.id, phone=phone, active=True).first()
     if driver and driver.check_password(password):
+        clear_login_failures('driver', attempt_key)
         session['driver_id'] = driver.id
         session['driver_name'] = driver.name
         session['school_id'] = school.id
@@ -549,14 +606,18 @@ def driver_login():
         return jsonify({'success': True, 'name': driver.name, 'school': school.name,
                         'route_id': driver.assigned_route_id,
                         'is_tracking': driver.is_tracking})
+    record_login_failure('driver', attempt_key)
     return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
 
 @app.route('/api/parent/login', methods=['POST'])
 def parent_login():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     phone = sanitize(data.get('phone',''))
     password = data.get('password','')
     school_code = sanitize(data.get('school_code',''))
+    attempt_key = f'{school_code}:{phone}'
+    if login_blocked('parent', attempt_key):
+        return jsonify({'success': False, 'message': TOO_MANY_ATTEMPTS[0]}), TOO_MANY_ATTEMPTS[1]
     
     school = School.query.filter_by(code=school_code).first()
     if not school or school.status == 'suspended':
@@ -564,6 +625,7 @@ def parent_login():
     
     parent = Parent.query.filter_by(school_id=school.id, phone=phone, active=True).first()
     if parent and parent.check_password(password):
+        clear_login_failures('parent', attempt_key)
         session['parent_id'] = parent.id
         session['parent_name'] = parent.name
         session['school_id'] = school.id
@@ -571,6 +633,7 @@ def parent_login():
         log_action(school.id, 'parent', parent.name, 'Parent login')
         return jsonify({'success': True, 'name': parent.name, 'school': school.name,
                         'child_name': parent.child_name, 'route_id': parent.assigned_route_id})
+    record_login_failure('parent', attempt_key)
     return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
 
 @app.route('/api/driver/start-tracking', methods=['POST'])
