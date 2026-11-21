@@ -39,7 +39,7 @@ function showSection(name, el) {
   if (name === 'payments')  loadPayments();
   if (name === 'logs')      loadLogs();
   if (name === 'dashboard') loadAll();
-  if (name === 'settings')  loadSettings();
+  if (name === 'settings')  { loadSettings(); loadTwoFactorStatus(); }
   if (name === 'drill')     populateDrillSchools();
   if (name === 'tracking')  initSuperTracking();
 }
@@ -344,6 +344,85 @@ async function saveSettings() {
     err.textContent = d.error || 'Failed to save settings.';
     err.classList.remove('hidden');
   }
+}
+
+// ── TWO-FACTOR AUTH ───────────────────
+let _tfaSecret = '';
+
+function tfaMessage(text, color) {
+  const msg = document.getElementById('tfa-msg');
+  msg.textContent = text;
+  msg.style.color = color || 'var(--muted)';
+}
+
+async function loadTwoFactorStatus() {
+  const status = document.getElementById('tfa-status');
+  const setupBtn = document.getElementById('tfa-setup-btn');
+  const setupPanel = document.getElementById('tfa-setup-panel');
+  const disablePanel = document.getElementById('tfa-disable-panel');
+  const r = await fetch('/api/super/2fa/status');
+  const d = await r.json();
+  if (d.error) { status.textContent = d.error; return; }
+  if (d.enabled) {
+    status.textContent = `✅ Enabled — ${d.recovery_codes_remaining} recovery code(s) remaining`;
+    status.style.color = 'var(--success)';
+    setupBtn.classList.add('hidden');
+    setupPanel.classList.add('hidden');
+    disablePanel.classList.remove('hidden');
+  } else {
+    status.textContent = '⚠️ Not enabled';
+    status.style.color = 'var(--warn)';
+    setupBtn.classList.remove('hidden');
+    setupPanel.classList.add('hidden');
+    disablePanel.classList.add('hidden');
+  }
+}
+
+async function startTwoFactorSetup() {
+  tfaMessage('');
+  const r = await fetch('/api/super/2fa/setup', { method: 'POST' });
+  const d = await r.json();
+  if (!d.success) { tfaMessage(d.error || 'Could not start setup.', 'var(--red)'); return; }
+  _tfaSecret = d.secret;
+  document.getElementById('tfa-secret').value = d.secret;
+  document.getElementById('tfa-setup-btn').classList.add('hidden');
+  document.getElementById('tfa-setup-panel').classList.remove('hidden');
+  document.getElementById('tfa-enable-code').focus();
+  tfaMessage('Add the secret to your authenticator app, then enter its code.');
+}
+
+async function enableTwoFactor() {
+  const code = document.getElementById('tfa-enable-code').value.trim();
+  if (!code) { tfaMessage('Enter the 6-digit code from your authenticator app.', 'var(--red)'); return; }
+  const r = await fetch('/api/super/2fa/enable', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ secret: _tfaSecret, code })
+  });
+  const d = await r.json();
+  if (!d.success) { tfaMessage(d.error || 'Could not enable 2FA.', 'var(--red)'); return; }
+  _tfaSecret = '';
+  document.getElementById('tfa-setup-panel').classList.add('hidden');
+  document.getElementById('tfa-recovery-codes').textContent = d.recovery_codes.join('\n');
+  document.getElementById('tfa-recovery-panel').classList.remove('hidden');
+  document.getElementById('tfa-enable-code').value = '';
+  tfaMessage(d.message, 'var(--success)');
+  loadTwoFactorStatus();
+}
+
+async function disableTwoFactor() {
+  const code = document.getElementById('tfa-disable-code').value.trim();
+  if (!code) { tfaMessage('Enter a current authenticator or recovery code to disable 2FA.', 'var(--red)'); return; }
+  if (!confirm('Disable two-factor authentication for this account?')) return;
+  const r = await fetch('/api/super/2fa/disable', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ code })
+  });
+  const d = await r.json();
+  if (!d.success) { tfaMessage(d.error || 'Could not disable 2FA.', 'var(--red)'); return; }
+  document.getElementById('tfa-disable-code').value = '';
+  document.getElementById('tfa-recovery-panel').classList.add('hidden');
+  tfaMessage(d.message, 'var(--success)');
+  loadTwoFactorStatus();
 }
 
 // ── DRILL-DOWN ────────────────────────

@@ -197,6 +197,44 @@
           <button class="btn-primary" onclick="saveSettings()">💾 Save Settings</button>
         </div>
       </div>
+
+      <div class="card" style="max-width:520px;background:var(--white);border-radius:var(--r);padding:1.8rem;box-shadow:var(--sh);margin-top:1.5rem">
+        <h3 style="margin-bottom:1.2rem;font-size:1rem">🔐 Two-Factor Authentication</h3>
+        <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem">
+          Protect the developer account with an authenticator app (Google Authenticator, Authy, 1Password).
+        </p>
+        <p id="tfa-status" style="font-size:.9rem;font-weight:700;margin-bottom:1rem">Checking status…</p>
+        <button id="tfa-setup-btn" class="btn-outline hidden" onclick="startTwoFactorSetup()">🔐 Set up 2FA</button>
+
+        <div id="tfa-setup-panel" class="hidden">
+          <div class="alert-info" style="margin-bottom:1rem">
+            Add this secret to your authenticator app, then enter the 6-digit code below.
+          </div>
+          <div class="form-group"><label>Secret key</label>
+            <input type="text" id="tfa-secret" readonly style="font-family:monospace;background:var(--grey)"/></div>
+          <div class="form-group"><label>Authenticator code</label>
+            <input type="text" id="tfa-enable-code" inputmode="numeric" autocomplete="one-time-code"
+              placeholder="6-digit code"/></div>
+          <button class="btn-primary" onclick="enableTwoFactor()">✅ Enable 2FA</button>
+        </div>
+
+        <div id="tfa-recovery-panel" class="hidden">
+          <div class="alert-warn" style="margin-bottom:1rem">
+            Save these recovery codes now. Each one works once and cannot be shown again.
+          </div>
+          <div id="tfa-recovery-codes" style="font-family:monospace;font-size:.85rem;line-height:1.6;
+            white-space:pre-line;background:var(--grey);border-radius:6px;padding:.8rem;margin-bottom:1rem"></div>
+        </div>
+
+        <div id="tfa-disable-panel" class="hidden">
+          <div class="form-group"><label>Authenticator or recovery code</label>
+            <input type="text" id="tfa-disable-code" inputmode="numeric" autocomplete="one-time-code"
+              placeholder="Code"/></div>
+          <button class="btn-danger btn-sm" onclick="disableTwoFactor()">Disable 2FA</button>
+        </div>
+
+        <p id="tfa-msg" style="font-size:.85rem;margin-top:.8rem"></p>
+      </div>
     </section>
 
   </main>

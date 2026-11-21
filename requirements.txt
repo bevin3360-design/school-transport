@@ -7,3 +7,4 @@ sqlalchemy==2.1.9
 gunicorn==27.0.1
 psycopg[binary]==3.3.9
 GeoAlchemy2==0.21.0
+pyotp==2.12.1

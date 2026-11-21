@@ -369,6 +369,9 @@
         <input type="text" id="s-user" placeholder="superadmin" autocomplete="off"/></div>
       <div class="form-group"><label>Password</label>
         <input type="password" id="s-pass" placeholder="Password"/></div>
+      <div class="form-group hidden" id="s-totp-group"><label>Authenticator / Recovery Code</label>
+        <input type="text" id="s-totp" inputmode="numeric" autocomplete="one-time-code"
+          placeholder="6-digit code or recovery code"/></div>
       <button class="btn-primary full" onclick="superLogin()">Sign In</button>
       <p id="s-err" class="error-msg hidden"></p>
     </div>
@@ -416,13 +419,19 @@ async function adminLogin() {
 async function superLogin() {
   const username=document.getElementById('s-user').value.trim();
   const password=document.getElementById('s-pass').value;
+  const totp_group=document.getElementById('s-totp-group');
+  const totp_code=document.getElementById('s-totp').value.trim();
   const err=document.getElementById('s-err');
   err.classList.add('hidden');
   const r=await fetch('/api/super/login',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({username,password})});
+    body:JSON.stringify({username,password,totp_code})});
   const d=await r.json();
-  if(d.success) window.location.href='/super';
-  else{err.textContent=d.message||'Login failed';err.classList.remove('hidden');}
+  if(d.success){window.location.href='/super';return;}
+  if(d.totp_required){
+    totp_group.classList.remove('hidden');
+    document.getElementById('s-totp').focus();
+  }
+  err.textContent=d.message||'Login failed';err.classList.remove('hidden');
 }
 async function driverLogin() {
   const school_code=document.getElementById('d-school').value.trim();

@@ -13,7 +13,8 @@ from datetime import datetime, date, timedelta
 from functools import wraps
 import math
 import os, re, json, secrets, threading, time
-from sqlalchemy import text
+import pyotp
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from extensions import db
 
@@ -207,6 +208,9 @@ class SuperAdmin(db.Model):
     id            = db.Column(db.Integer, primary_key=True)
     username      = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
+    totp_secret   = db.Column(db.String(64))
+    totp_enabled  = db.Column(db.Boolean, default=False)
+    totp_recovery = db.Column(db.Text)
 
     def set_password(self, pw): self.password_hash = generate_password_hash(pw)
     def check_password(self, pw): return check_password_hash(self.password_hash, pw)
@@ -380,6 +384,27 @@ def clear_login_failures(scope, identifier):
 
 TOO_MANY_ATTEMPTS = ('Too many failed attempts. Try again in 15 minutes.', 429)
 
+def verify_super_second_factor(admin, code):
+    """Accept a current TOTP code or consume a one-time recovery code."""
+    code = str(code or '').strip()
+    if not code or not admin.totp_secret:
+        return False
+    try:
+        if pyotp.TOTP(admin.totp_secret).verify(code, valid_window=1):
+            return True
+    except ValueError:
+        pass
+    try:
+        hashes = json.loads(admin.totp_recovery or '[]')
+    except ValueError:
+        return False
+    for stored in list(hashes):
+        if check_password_hash(stored, code):
+            hashes.remove(stored)
+            admin.totp_recovery = json.dumps(hashes)
+            return True
+    return False
+
 def get_settings():
     """Always returns the single PlatformSettings row, creating it if missing."""
     s = PlatformSettings.query.first()
@@ -516,6 +541,18 @@ def super_login():
         return jsonify({'success': False, 'message': TOO_MANY_ATTEMPTS[0]}), TOO_MANY_ATTEMPTS[1]
     sa = SuperAdmin.query.filter_by(username=username).first()
     if sa and sa.check_password(data.get('password','')):
+        if sa.totp_enabled:
+            if not verify_super_second_factor(sa, data.get('totp_code')):
+                db.session.commit()
+                record_login_failure('super', username)
+                return jsonify({
+                    'success': False,
+                    'totp_required': True,
+                    'message': ('Enter a valid authenticator or recovery code'
+                                if data.get('totp_code')
+                                else 'Authenticator code required'),
+                }), 401
+            db.session.commit()
         clear_login_failures('super', username)
         session['super_id'] = sa.id
         session['super_name'] = sa.username
@@ -1627,6 +1664,89 @@ def super_update_settings():
     return jsonify({'success': True, 'message': 'Settings saved successfully.'})
 
 # ════════════════════════════════════════
+# SUPER ADMIN TWO-FACTOR AUTHENTICATION
+# ════════════════════════════════════════
+def current_super_admin():
+    sid = session.get('super_id')
+    return db.session.get(SuperAdmin, sid) if sid else None
+
+def _recovery_code_count(admin):
+    try:
+        return len(json.loads(admin.totp_recovery or '[]'))
+    except ValueError:
+        return 0
+
+@app.route('/api/super/2fa/status', methods=['GET'])
+def super_2fa_status():
+    if not is_super(): return jsonify({'error': 'Unauthorised'}), 403
+    sa = current_super_admin()
+    if not sa: return jsonify({'error': 'Unauthorised'}), 403
+    return jsonify({
+        'enabled': bool(sa.totp_enabled),
+        'recovery_codes_remaining': _recovery_code_count(sa),
+    })
+
+@app.route('/api/super/2fa/setup', methods=['POST'])
+def super_2fa_setup():
+    if not is_super(): return jsonify({'error': 'Unauthorised'}), 403
+    sa = current_super_admin()
+    if not sa: return jsonify({'error': 'Unauthorised'}), 403
+    if sa.totp_enabled:
+        return jsonify({'error': 'Disable two-factor authentication before setting it up again.'}), 409
+    secret = pyotp.random_base32()
+    uri = pyotp.TOTP(secret).provisioning_uri(
+        name=sa.username, issuer_name='My School Transport')
+    return jsonify({'success': True, 'secret': secret, 'otpauth_url': uri})
+
+@app.route('/api/super/2fa/enable', methods=['POST'])
+def super_2fa_enable():
+    if not is_super(): return jsonify({'error': 'Unauthorised'}), 403
+    sa = current_super_admin()
+    if not sa: return jsonify({'error': 'Unauthorised'}), 403
+    if sa.totp_enabled:
+        return jsonify({'error': 'Two-factor authentication is already enabled.'}), 409
+    data = request.get_json(silent=True) or {}
+    secret = str(data.get('secret') or '').strip().upper()
+    code = str(data.get('code') or '').strip()
+    if not re.fullmatch(r'[A-Z2-7]{24,64}', secret):
+        return jsonify({'error': 'Start setup first.'}), 400
+    try:
+        valid = pyotp.TOTP(secret).verify(code, valid_window=1)
+    except ValueError:
+        valid = False
+    if not valid:
+        return jsonify({'error': 'Invalid authenticator code.'}), 400
+    recovery = [f'{secrets.token_hex(2)}-{secrets.token_hex(2)}-{secrets.token_hex(2)}'
+                for _ in range(10)]
+    sa.totp_secret = secret
+    sa.totp_recovery = json.dumps([generate_password_hash(c) for c in recovery])
+    sa.totp_enabled = True
+    db.session.commit()
+    log_action(None, 'super', sa.username, 'Enabled two-factor authentication')
+    return jsonify({
+        'success': True,
+        'recovery_codes': recovery,
+        'message': 'Two-factor authentication enabled. Store these recovery codes now; they are shown once.',
+    })
+
+@app.route('/api/super/2fa/disable', methods=['POST'])
+def super_2fa_disable():
+    if not is_super(): return jsonify({'error': 'Unauthorised'}), 403
+    sa = current_super_admin()
+    if not sa: return jsonify({'error': 'Unauthorised'}), 403
+    if not sa.totp_enabled:
+        return jsonify({'error': 'Two-factor authentication is not enabled.'}), 400
+    code = (request.get_json(silent=True) or {}).get('code')
+    if not verify_super_second_factor(sa, code):
+        return jsonify({'error': 'Enter a valid authenticator or recovery code.'}), 400
+    sa.totp_enabled = False
+    sa.totp_secret = None
+    sa.totp_recovery = None
+    db.session.commit()
+    log_action(None, 'super', sa.username, 'Disabled two-factor authentication')
+    return jsonify({'success': True, 'message': 'Two-factor authentication disabled.'})
+
+# ════════════════════════════════════════
 # SCHOOL ADMIN APIs (scoped to school)
 # ════════════════════════════════════════
 @app.route('/api/school/settings', methods=['GET'])
@@ -1928,6 +2048,18 @@ def security_headers(response):
 def init_db():
     with app.app_context():
         db.create_all()
+        try:
+            existing = {c['name'] for c in inspect(db.engine).get_columns('super_admin')}
+            for column, statement in (
+                ('totp_secret', 'ALTER TABLE super_admin ADD COLUMN totp_secret VARCHAR(64)'),
+                ('totp_enabled', 'ALTER TABLE super_admin ADD COLUMN totp_enabled BOOLEAN DEFAULT FALSE'),
+                ('totp_recovery', 'ALTER TABLE super_admin ADD COLUMN totp_recovery TEXT'),
+            ):
+                if column not in existing:
+                    with db.engine.begin() as connection:
+                        connection.execute(text(statement))
+        except SQLAlchemyError as exc:
+            print(f'WARNING: could not add 2FA columns: {exc}', flush=True)
         try:
             with db.engine.begin() as connection:
                 connection.execute(text(
