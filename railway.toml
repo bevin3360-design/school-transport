@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "python sts-platform/scripts/start_railway.py"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
