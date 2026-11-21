@@ -1496,30 +1496,38 @@ def super_update_settings():
 # ════════════════════════════════════════
 @app.route('/api/school/settings', methods=['GET'])
 def school_settings():
+    if not (is_school_admin() or session.get('teacher_id')):
+        return jsonify({'error':'Unauthorised'}), 403
     school, err = get_school_or_403()
     if err: return err
-    s = get_settings()
-    return jsonify({
+    payload = {
         'name': school.name, 'code': school.code,
         'plan': school.plan, 'status': school.status,
         'days_remaining': school.days_remaining(),
         'morning_active': school.morning_active,
         'evening_active': school.evening_active,
-        'public_link': school.public_link or '',
-        'mpesa_number': s.mpesa_number,
-        'mpesa_name':   s.mpesa_name,
-        'plans': PLANS
-    })
+        'public_link': school.public_link or ''
+    }
+    if is_school_admin():
+        s = get_settings()
+        payload.update({'mpesa_number': s.mpesa_number,
+                        'mpesa_name': s.mpesa_name,
+                        'plans': PLANS})
+    return jsonify(payload)
 
 @app.route('/api/school/settings', methods=['PUT'])
 def update_school_settings():
     if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
     school, err = get_school_or_403()
     if err: return err
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
+    if 'public_link' in data:
+        link = sanitize(data.get('public_link')).strip()
+        if link and not re.match(r'^https?://\S+$', link, re.IGNORECASE):
+            return jsonify({'error': 'Public link must start with http:// or https://'}), 400
+        school.public_link = link[:300]
     if 'morning_active' in data: school.morning_active = bool(data['morning_active'])
     if 'evening_active' in data: school.evening_active = bool(data['evening_active'])
-    if 'public_link' in data: school.public_link = data['public_link'].strip()
     db.session.commit()
     return jsonify({'success': True})
 
