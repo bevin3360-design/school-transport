@@ -372,7 +372,7 @@ async function loadParents() {
   const tbody = document.getElementById('parents-body');
   
   if (parents.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);">No parents added yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);">No parents added yet</td></tr>';
     return;
   }
   
@@ -383,12 +383,35 @@ async function loadParents() {
       <td>${p.child_name || 'N/A'}</td>
       <td>${p.child_class || 'N/A'}</td>
       <td>${p.assigned_route_name || '<span style="color:var(--muted);">Unassigned</span>'}</td>
+      <td>${p.phone_verified
+        ? '<span class="badge-green">✅ Verified</span>'
+        : '<span class="badge-warn">⚠️ Unverified</span>'}</td>
       <td>
+        <button class="btn-sm" onclick="toggleParentPhone(${p.id}, ${!p.phone_verified})"
+          title="${p.phone_verified ? 'Remove verification' : 'Verify this phone number'}">
+          ${p.phone_verified ? '↩️' : '✅'}</button>
         <button class="btn-sm" onclick="editParent(${p.id})">✏️</button>
         <button class="btn-sm btn-danger" onclick="deleteParent(${p.id},'${p.name}')">🗑️</button>
       </td>
     </tr>
   `).join('');
+}
+
+async function toggleParentPhone(id, verified) {
+  const prompt = verified
+    ? 'Mark this parent\'s phone number as verified?'
+    : 'Remove phone verification for this parent?';
+  if (!confirm(prompt)) return;
+  const r = await fetch(`/api/admin/parent/${id}/verify-phone`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ verified })
+  });
+  if (r.ok) {
+    await loadParents();
+  } else {
+    const d = await r.json().catch(() => ({}));
+    alert(d.error || 'Could not update phone verification');
+  }
 }
 
 function openAddParent() {

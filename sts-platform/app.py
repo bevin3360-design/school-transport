@@ -266,6 +266,7 @@ class Parent(db.Model):
     # Link parent to a specific route their child uses
     assigned_route_id = db.Column(db.Integer, db.ForeignKey('route.id'), nullable=True)
     active        = db.Column(db.Boolean, default=True)
+    phone_verified = db.Column(db.Boolean, default=False)
     created_at    = db.Column(db.DateTime, default=datetime.utcnow)
     school        = db.relationship('School', backref='parents')
     assigned_route= db.relationship('Route', backref='parents')
@@ -1151,6 +1152,7 @@ def admin_parents():
         'child_class': p.child_class,
         'assigned_route_id': p.assigned_route_id,
         'assigned_route_name': p.assigned_route.name if p.assigned_route else None,
+        'phone_verified': bool(p.phone_verified),
         'active': p.active
     } for p in parents])
 
@@ -1209,6 +1211,24 @@ def admin_edit_parent(pid):
     
     db.session.commit()
     return jsonify({'success': True})
+
+@app.route('/api/admin/parent/<int:pid>/verify-phone', methods=['POST'])
+def admin_verify_parent_phone(pid):
+    if not is_school_admin():
+        return jsonify({'error': 'Unauthorised'}), 403
+    parent = Parent.query.filter_by(
+        id=pid, school_id=current_school_id()).first_or_404()
+    verified = (request.get_json(silent=True) or {}).get('verified')
+    if not isinstance(verified, bool):
+        return jsonify({'error': 'verified must be true or false'}), 400
+    if bool(parent.phone_verified) == verified:
+        return jsonify({'success': True, 'verified': verified})
+    parent.phone_verified = verified
+    db.session.commit()
+    action = 'Verified parent phone' if verified else 'Removed parent phone verification'
+    log_action(current_school_id(), 'admin', session.get('school_name'),
+               f'{action}: {parent.name}')
+    return jsonify({'success': True, 'verified': verified})
 
 @app.route('/api/admin/parent/<int:pid>/delete', methods=['DELETE'])
 def admin_delete_parent(pid):
@@ -2060,6 +2080,14 @@ def init_db():
                         connection.execute(text(statement))
         except SQLAlchemyError as exc:
             print(f'WARNING: could not add 2FA columns: {exc}', flush=True)
+        try:
+            existing = {c['name'] for c in inspect(db.engine).get_columns('parent')}
+            if 'phone_verified' not in existing:
+                with db.engine.begin() as connection:
+                    connection.execute(text(
+                        'ALTER TABLE parent ADD COLUMN phone_verified BOOLEAN DEFAULT FALSE'))
+        except SQLAlchemyError as exc:
+            print(f'WARNING: could not add parent phone verification column: {exc}', flush=True)
         try:
             with db.engine.begin() as connection:
                 connection.execute(text(
