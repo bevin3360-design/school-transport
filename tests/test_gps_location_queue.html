@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>GPS queue browser test</title></head>
+<body>
+<pre id="result">Running GPS queue tests...</pre>
+<script src="../sts-platform/static/js/gps-location-queue.js"></script>
+<script>
+(async () => {
+  const result = document.getElementById('result');
+  const params = new URLSearchParams(window.location.search);
+  const owner = params.get('owner') || `queue-test-${Date.now()}`;
+  const otherOwner = `${owner}-other`;
+  const queue = window.GPSLocationQueue;
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(message);
+  };
+
+  if (params.get('phase') === 'verify-persistence') {
+    const saved = await queue.first(owner);
+    assert(saved && saved.payload.sequence === 'persisted',
+      'Queued updates did not survive a page reload.');
+    for (const key of [owner, otherOwner]) {
+      let queued = await queue.first(key);
+      while (queued) {
+        await queue.remove(queued.id);
+        queued = await queue.first(key);
+      }
+    }
+    result.textContent = 'PASS: GPS queue persistence after reload';
+    result.dataset.result = 'passed';
+    return;
+  }
+
+  for (const key of [owner, otherOwner]) {
+    let queued = await queue.first(key);
+    while (queued) {
+      await queue.remove(queued.id);
+      queued = await queue.first(key);
+    }
+  }
+
+  await queue.enqueue(owner, {sequence: 1});
+  await queue.enqueue(otherOwner, {sequence: 99});
+  await queue.enqueue(owner, {sequence: 2});
+  assert(await queue.count(owner) === 2, 'Per-driver queue count is incorrect.');
+  assert(await queue.count(otherOwner) === 1, 'Queues were not isolated by driver.');
+
+  let sent = [];
+  const limited = await queue.sendNext(owner, async payload => {
+    sent.push(payload.sequence);
+    return {ok: false, status: 429};
+  });
+  assert(limited.response.status === 429, 'The rate-limit response was not returned.');
+  assert(await queue.count(owner) === 2, 'Rate-limited update was removed.');
+
+  const accepted = await queue.sendNext(owner, async payload => {
+    sent.push(payload.sequence);
+    return {ok: true, status: 200};
+  });
+  assert(accepted.response.ok, 'A successful update was not accepted.');
+  assert((await queue.first(owner)).payload.sequence === 2,
+    'Updates were not retried in order.');
+  const second = await queue.sendNext(owner, async payload => {
+    sent.push(payload.sequence);
+    return {ok: true, status: 200};
+  });
+  assert(second.response.ok, 'The next ordered update was not sent.');
+  assert(sent.join(',') === '1,1,2', 'Updates were not retried in order.');
+  assert(await queue.count(owner) === 0, 'Accepted updates remained queued.');
+
+  await queue.enqueue(owner, {sequence: 'persisted'});
+  window.location.replace(
+    `${window.location.pathname}?phase=verify-persistence&owner=${encodeURIComponent(owner)}`
+  );
+})().catch(error => {
+  const result = document.getElementById('result');
+  result.textContent = `FAIL: ${error.message}`;
+  result.dataset.result = 'failed';
+});
+</script>
+</body>
+</html>

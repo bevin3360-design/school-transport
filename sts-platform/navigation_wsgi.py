@@ -3,7 +3,10 @@ from datetime import date
 
 from flask import jsonify, request, session
 
-from app import app, Driver, DutyAssignment, Parent, Route, Teacher, current_school_id
+from app import (
+    app, Driver, DutyAssignment, Parent, Route, School, Teacher, current_school_id,
+    gps_location_payload,
+)
 
 
 def _vehicle_scope():
@@ -63,20 +66,35 @@ def vehicle_locations():
         route = Route.query.filter_by(
             id=driver.assigned_route_id, school_id=driver.school_id
         ).first() if driver.assigned_route_id else None
-        live = bool(
-            driver.is_tracking and driver.current_latitude is not None
-            and driver.current_longitude is not None
-        )
-        vehicles.append({
+        vehicle = {
             'id': driver.id,
             'driver_name': driver.name,
             'route_name': route.name if route else 'Route not assigned',
             'route_type': ('Morning' if route.is_morning else 'Evening') if route else '',
-            'is_tracking': live,
-            'latitude': driver.current_latitude if live else None,
-            'longitude': driver.current_longitude if live else None,
             'last_update': driver.last_location_update.isoformat() if driver.last_location_update else None
-        })
+        }
+
+        if session.get('parent_id') and app.config['GPS_FRESHNESS_ENABLED']:
+            school = School.query.filter_by(id=driver.school_id).first()
+            shift_active = bool(
+                route and route.active and school
+                and (school.morning_active if route.is_morning else school.evening_active)
+            )
+            location = gps_location_payload(driver, enabled=shift_active)
+            vehicle.update(location)
+            vehicle['is_tracking'] = location['location_state'] in ('live', 'delayed')
+        else:
+            live = bool(
+                driver.is_tracking and driver.current_latitude is not None
+                and driver.current_longitude is not None
+            )
+            vehicle.update({
+                'is_tracking': live,
+                'latitude': driver.current_latitude if live else None,
+                'longitude': driver.current_longitude if live else None,
+            })
+
+        vehicles.append(vehicle)
 
     return jsonify({'vehicles': vehicles, 'message': message})
 

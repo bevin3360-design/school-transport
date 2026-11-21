@@ -152,6 +152,17 @@ class ScopedListTests(IsolationBase):
         self.assertEqual(self.client.get('/api/parent/track-bus').json['route_name'],
                          'Beta Route')
 
+    def test_teacher_cannot_read_pickup_stop_from_parent_session_data(self):
+        self.set_session(
+            teacher_id=self.id['a']['teacher'],
+            parent_id=self.id['b']['parent'],
+            school_id=self.a,
+            school_name='Alpha School',
+        )
+        response = self.client.get('/api/parent/stops')
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn('Beta gate', response.get_data(as_text=True))
+
     def test_role_separation_on_admin_endpoints(self):
         for role in (self.as_teacher, self.as_driver, self.as_parent):
             role('a')

@@ -101,6 +101,17 @@ for the interactive alternative.
 - Pickup and drop-off alerts include a snapshot of the saved stop so later edits do not change an alert already sent.
 - Drivers see the stop in the alert and can open directions in Google Maps.
 
+## GPS Freshness
+- GPS is labeled live (up to 30 seconds), delayed (up to 2 minutes), stale (up to 5 minutes), or unavailable.
+- The parent tracking API, dashboard, and shared map use server-calculated freshness. Parents see a map pin only during an active school shift while tracking is live or delayed (up to 2 minutes); the pin is removed otherwise.
+- Hosts can override the limits with `GPS_LIVE_MAX_AGE_SECONDS`, `GPS_DELAYED_MAX_AGE_SECONDS`, and `GPS_STALE_MAX_AGE_SECONDS`; values must be positive and ordered.
+- Set `GPS_FRESHNESS_ENABLED=0` to disable freshness classification while retaining the legacy tracking state.
+- Driver location updates require active tracking, valid coordinates, and are limited to one update per five seconds per driver. `GPS_LOCATION_UPDATE_GUARDS_ENABLED=0` disables these update guards; `GPS_MIN_UPDATE_INTERVAL_SECONDS` changes the interval.
+- Location history stores server time separately from nullable device time, accuracy (meters), and vehicle details. It is available only through the school-admin or platform-admin API.
+- Startup adds the nullable history columns and `(driver_id, timestamp)` index idempotently. Back up the production database before deploying this schema change; migration testing must use a copy, not the live database.
+- History older than `GPS_HISTORY_RETENTION_DAYS` (default 90) can be removed with `python sts-platform/scripts/cleanup_gps_history.py`. Cleanup is disabled by default; set `GPS_HISTORY_CLEANUP_ENABLED=1` for the one-off run. Re-running it is safe.
+- Driver phones persist failed updates in an ordered, per-driver IndexedDB queue and retry without removing an item until the server accepts it. `GPS_PHONE_QUEUE_ENABLED=0` restores direct, non-queued sending.
+
 ## Allocation Rules
 1. Teacher who worked yesterday is rested today
 2. Teacher must rotate through ALL routes before repeating any

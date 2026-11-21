@@ -9,7 +9,7 @@ from flask_cors import CORS
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from markupsafe import escape
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from functools import wraps
 import math
 import os, re, json, secrets, threading, time
@@ -42,6 +42,101 @@ app.config.update(
     ),
     PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
 )
+
+app.config.update(
+    GPS_LIVE_MAX_AGE_SECONDS=int(os.environ.get('GPS_LIVE_MAX_AGE_SECONDS', '30')),
+    GPS_DELAYED_MAX_AGE_SECONDS=int(os.environ.get('GPS_DELAYED_MAX_AGE_SECONDS', '120')),
+    GPS_STALE_MAX_AGE_SECONDS=int(os.environ.get('GPS_STALE_MAX_AGE_SECONDS', '300')),
+    GPS_FRESHNESS_ENABLED=os.environ.get('GPS_FRESHNESS_ENABLED', '1').strip().lower()
+    not in ('0', 'false', 'off'),
+    GPS_LOCATION_UPDATE_GUARDS_ENABLED=os.environ.get(
+        'GPS_LOCATION_UPDATE_GUARDS_ENABLED', '1'
+    ).strip().lower() not in ('0', 'false', 'off'),
+    GPS_MIN_UPDATE_INTERVAL_SECONDS=int(
+        os.environ.get('GPS_MIN_UPDATE_INTERVAL_SECONDS', '5')
+    ),
+    GPS_HISTORY_RETENTION_DAYS=int(
+        os.environ.get('GPS_HISTORY_RETENTION_DAYS', '90')
+    ),
+    GPS_HISTORY_CLEANUP_ENABLED=os.environ.get(
+        'GPS_HISTORY_CLEANUP_ENABLED', '0'
+    ).strip().lower() not in ('0', 'false', 'off'),
+    GPS_PHONE_QUEUE_ENABLED=os.environ.get(
+        'GPS_PHONE_QUEUE_ENABLED', '1'
+    ).strip().lower() not in ('0', 'false', 'off'),
+)
+if not (
+    0 < app.config['GPS_LIVE_MAX_AGE_SECONDS']
+    <= app.config['GPS_DELAYED_MAX_AGE_SECONDS']
+    <= app.config['GPS_STALE_MAX_AGE_SECONDS']
+):
+    raise RuntimeError(
+        'GPS freshness limits must be positive and ordered: live <= delayed <= stale.'
+    )
+if app.config['GPS_MIN_UPDATE_INTERVAL_SECONDS'] <= 0:
+    raise RuntimeError('GPS_MIN_UPDATE_INTERVAL_SECONDS must be positive.')
+if app.config['GPS_HISTORY_RETENTION_DAYS'] <= 0:
+    raise RuntimeError('GPS_HISTORY_RETENTION_DAYS must be positive.')
+
+
+def gps_location_timestamp(driver):
+    if not driver:
+        return None
+    latest_history = LocationHistory.query.filter_by(
+        driver_id=driver.id
+    ).order_by(
+        LocationHistory.timestamp.desc(), LocationHistory.id.desc()
+    ).first()
+    if latest_history and latest_history.device_time:
+        return latest_history.device_time
+    return driver.last_location_update
+
+
+def get_gps_location_state(driver, enabled=True, now=None, location_timestamp=None):
+    if (not enabled or not driver or not driver.is_tracking
+            or driver.current_latitude is None or driver.current_longitude is None):
+        return 'unavailable'
+
+    if not app.config['GPS_FRESHNESS_ENABLED']:
+        return 'live'
+    if location_timestamp is None:
+        location_timestamp = gps_location_timestamp(driver)
+    if not location_timestamp:
+        return 'unavailable'
+    age = (
+        (now or datetime.now(timezone.utc).replace(tzinfo=None))
+        - location_timestamp
+    ).total_seconds()
+    if age < 0:
+        return 'unavailable'
+    if age <= app.config['GPS_LIVE_MAX_AGE_SECONDS']:
+        return 'live'
+    if age <= app.config['GPS_DELAYED_MAX_AGE_SECONDS']:
+        return 'delayed'
+    if age <= app.config['GPS_STALE_MAX_AGE_SECONDS']:
+        return 'stale'
+    return 'unavailable'
+
+
+def gps_location_payload(driver, enabled=True):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    location_timestamp = driver.last_location_update if driver else None
+    if app.config['GPS_FRESHNESS_ENABLED']:
+        location_timestamp = gps_location_timestamp(driver)
+    state = get_gps_location_state(
+        driver, enabled=enabled, now=now, location_timestamp=location_timestamp
+    )
+    payload = {'location_state': state, 'location_age_seconds': None}
+    if location_timestamp:
+        age = (now - location_timestamp).total_seconds()
+        if age >= 0:
+            payload['location_age_seconds'] = int(age)
+    if state in ('live', 'delayed'):
+        payload.update(
+            latitude=driver.current_latitude,
+            longitude=driver.current_longitude,
+        )
+    return payload
 
 csrf = CSRFProtect(app)
 # Tests opt out through the environment; production keeps protection on.
@@ -291,12 +386,18 @@ class ParentStop(db.Model):
 
 class LocationHistory(db.Model):
     """Track GPS location history for analytics and playback"""
+    __table_args__ = (
+        db.Index('ix_location_history_driver_timestamp', 'driver_id', 'timestamp'),
+    )
     id        = db.Column(db.Integer, primary_key=True)
     driver_id = db.Column(db.Integer, db.ForeignKey('driver.id'), nullable=False)
     latitude  = db.Column(db.Float, nullable=False)
     longitude = db.Column(db.Float, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     speed     = db.Column(db.Float, nullable=True)  # km/h
+    device_time = db.Column(db.DateTime, nullable=True)
+    accuracy  = db.Column(db.Float, nullable=True)  # meters
+    vehicle   = db.Column(db.String(120), nullable=True)
     driver    = db.relationship('Driver', backref='location_history')
 
 class PickupAlert(db.Model):
@@ -420,6 +521,12 @@ def is_super(): return session.get('super_id') is not None
 def is_school_admin(): return session.get('school_admin_id') is not None
 def current_school_id(): return session.get('school_id')
 
+def is_parent_session():
+    role_keys = ('super_id', 'school_admin_id', 'teacher_id', 'driver_id', 'parent_id')
+    return session.get('parent_id') is not None and all(
+        session.get(key) is None for key in role_keys if key != 'parent_id'
+    )
+
 def get_school_or_403():
     sid = current_school_id()
     if not sid: return None, (jsonify({'error':'Unauthorised'}), 403)
@@ -538,7 +645,10 @@ def payment_page():
 @app.route('/driver')
 def driver_panel():
     if not session.get('driver_id'): return redirect('/')
-    return render_template('driver.html')
+    return render_template(
+        'driver.html',
+        gps_phone_queue_enabled=app.config['GPS_PHONE_QUEUE_ENABLED'],
+    )
 
 @app.route('/parent')
 def parent_panel():
@@ -645,7 +755,8 @@ def check_session():
                         'school': session.get('school_name'),
                         'school_id': session.get('school_id')})
     if session.get('driver_id'):
-        return jsonify({'type': 'driver', 'name': session.get('driver_name'),
+        return jsonify({'type': 'driver', 'driver_id': session.get('driver_id'),
+                        'name': session.get('driver_name'),
                         'school': session.get('school_name'),
                         'school_id': session.get('school_id')})
     if session.get('parent_id'):
@@ -731,6 +842,7 @@ def driver_stop_tracking():
     driver.is_tracking = False
     driver.current_latitude = None
     driver.current_longitude = None
+    driver.last_location_update = None
     db.session.commit()
     log_action(session['school_id'], 'driver', session['driver_name'], 'Stopped GPS tracking')
     return jsonify({'success': True, 'message': 'GPS tracking stopped'})
@@ -739,25 +851,111 @@ def driver_stop_tracking():
 def driver_update_location():
     if not session.get('driver_id'):
         return jsonify({'error': 'Unauthorised'}), 403
-    data = request.get_json()
-    latitude = float(data.get('latitude', 0))
-    longitude = float(data.get('longitude', 0))
-    speed = data.get('speed')  # Optional
-    
-    if not latitude or not longitude:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'A JSON object with latitude and longitude is required'}), 400
+
+    raw_latitude = data.get('latitude')
+    raw_longitude = data.get('longitude')
+    if isinstance(raw_latitude, bool) or isinstance(raw_longitude, bool):
+        return jsonify({'error': 'Latitude and longitude must be numeric'}), 400
+    try:
+        latitude = float(raw_latitude)
+        longitude = float(raw_longitude)
+    except (TypeError, ValueError, OverflowError):
+        return jsonify({'error': 'Latitude and longitude must be numeric'}), 400
+
+    if not math.isfinite(latitude) or not math.isfinite(longitude):
+        return jsonify({'error': 'Latitude and longitude must be finite numbers'}), 400
+
+    guards_enabled = app.config['GPS_LOCATION_UPDATE_GUARDS_ENABLED']
+    if guards_enabled and (
+        not -90 <= latitude <= 90 or not -180 <= longitude <= 180
+    ):
+        return jsonify({'error': 'Latitude or longitude is outside the valid range'}), 400
+    if not guards_enabled and (not latitude or not longitude):
         return jsonify({'error': 'Latitude and longitude required'}), 400
-    
-    driver = Driver.query.get(session['driver_id'])
+
+    speed = data.get('speed')  # Optional
+    raw_accuracy = data.get('accuracy')
+    accuracy = None
+    if raw_accuracy is not None:
+        if isinstance(raw_accuracy, bool):
+            return jsonify({'error': 'Accuracy must be a non-negative number'}), 400
+        try:
+            accuracy = float(raw_accuracy)
+        except (TypeError, ValueError, OverflowError):
+            return jsonify({'error': 'Accuracy must be a non-negative number'}), 400
+        if not math.isfinite(accuracy) or accuracy < 0:
+            return jsonify({'error': 'Accuracy must be a non-negative number'}), 400
+
+    raw_device_time = data.get('device_time')
+    device_time = None
+    if raw_device_time is not None:
+        if not isinstance(raw_device_time, str):
+            return jsonify({'error': 'Device time must be an ISO 8601 timestamp'}), 400
+        try:
+            device_time = datetime.fromisoformat(
+                raw_device_time.replace('Z', '+00:00')
+            )
+        except ValueError:
+            return jsonify({'error': 'Device time must be an ISO 8601 timestamp'}), 400
+        if device_time.tzinfo is not None:
+            device_time = device_time.astimezone(timezone.utc).replace(tzinfo=None)
+
+    vehicle = data.get('vehicle')
+    if vehicle is not None:
+        if not isinstance(vehicle, str) or len(vehicle) > 120:
+            return jsonify({'error': 'Vehicle must be a string of at most 120 characters'}), 400
+        vehicle = vehicle.strip() or None
+
+    driver_query = Driver.query.filter_by(id=session['driver_id'])
+    if guards_enabled:
+        driver_query = driver_query.with_for_update()
+    driver = driver_query.first()
+    if not driver:
+        return jsonify({'error': 'Driver not found'}), 404
+    if guards_enabled and not driver.is_tracking:
+        return jsonify({'error': 'GPS tracking is not active'}), 409
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if guards_enabled:
+        latest_history = LocationHistory.query.filter_by(
+            driver_id=driver.id
+        ).order_by(
+            LocationHistory.timestamp.desc(), LocationHistory.id.desc()
+        ).first()
+        last_update = driver.last_location_update
+        if latest_history and (
+            last_update is None or latest_history.timestamp > last_update
+        ):
+            last_update = latest_history.timestamp
+        if last_update:
+            elapsed = (now - last_update).total_seconds()
+            minimum_interval = app.config['GPS_MIN_UPDATE_INTERVAL_SECONDS']
+            if elapsed < minimum_interval:
+                retry_after = max(1, math.ceil(minimum_interval - elapsed))
+                response = jsonify({
+                    'error': 'Location updates are arriving too frequently',
+                    'retry_after_seconds': retry_after,
+                })
+                response.headers['Retry-After'] = str(retry_after)
+                return response, 429
+
     driver.current_latitude = latitude
     driver.current_longitude = longitude
-    driver.last_location_update = datetime.utcnow()
+    driver.last_location_update = now
     
     # Save to history for route playback
     history = LocationHistory(
         driver_id=driver.id,
         latitude=latitude,
         longitude=longitude,
-        speed=speed
+        timestamp=now,
+        speed=speed,
+        device_time=device_time,
+        accuracy=accuracy,
+        vehicle=vehicle,
     )
     db.session.add(history)
     db.session.commit()
@@ -766,7 +964,7 @@ def driver_update_location():
 
 @app.route('/api/parent/track-bus')
 def parent_track_bus():
-    if not session.get('parent_id'):
+    if not is_parent_session():
         return jsonify({'error': 'Unauthorised'}), 403
     
     parent = Parent.query.get(session['parent_id'])
@@ -809,6 +1007,8 @@ def parent_track_bus():
         'route_name': route.name,
         'route_type': 'Morning' if route.is_morning else 'Evening',
         'shift_active': shift_active,
+        'freshness_enabled': app.config['GPS_FRESHNESS_ENABLED'],
+        'last_update': driver.last_location_update.isoformat() if driver and driver.last_location_update else None,
         'driver': {
             'name': driver.name if driver else 'Not assigned',
             'phone': driver.phone if driver else None,
@@ -817,12 +1017,10 @@ def parent_track_bus():
         'teacher': teacher_info,
         'tracking': False
     }
-    
-    if shift_active and driver and driver.is_tracking and driver.current_latitude:
-        response['tracking'] = True
-        response['latitude'] = driver.current_latitude
-        response['longitude'] = driver.current_longitude
-        response['last_update'] = driver.last_location_update.isoformat() if driver.last_location_update else None
+
+    location = gps_location_payload(driver, enabled=shift_active)
+    response.update(location)
+    response['tracking'] = location['location_state'] in ('live', 'delayed')
     
     return jsonify(response)
 
@@ -839,7 +1037,7 @@ def serialize_parent_stop(stop):
 
 @app.route('/api/parent/stops')
 def parent_get_stops():
-    if not session.get('parent_id'):
+    if not is_parent_session():
         return jsonify({'error': 'Unauthorised'}), 403
 
     parent_id = session['parent_id']
@@ -851,7 +1049,7 @@ def parent_get_stops():
 
 @app.route('/api/parent/stops/<stop_type>', methods=['PUT'])
 def parent_save_stop(stop_type):
-    if not session.get('parent_id'):
+    if not is_parent_session():
         return jsonify({'error': 'Unauthorised'}), 403
     if stop_type not in ('pickup', 'dropoff'):
         return jsonify({'error': 'Stop type must be pickup or dropoff'}), 400
@@ -890,7 +1088,7 @@ def parent_save_stop(stop_type):
 @app.route('/api/parent/alert-driver', methods=['POST'])
 def parent_alert_driver():
     """Parent notifies driver they're ready at pickup/dropoff point"""
-    if not session.get('parent_id'):
+    if not is_parent_session():
         return jsonify({'error': 'Unauthorised'}), 403
     
     data = request.get_json(silent=True) or {}
@@ -1099,6 +1297,40 @@ def admin_drivers():
         'longitude': d.current_longitude,
         'last_location_update': d.last_location_update.isoformat() if d.last_location_update else None
     } for d in drivers])
+
+@app.route('/api/admin/drivers/<int:did>/location-history')
+def admin_driver_location_history(did):
+    if is_school_admin():
+        driver = Driver.query.filter_by(
+            id=did, school_id=current_school_id()
+        ).first_or_404()
+    elif is_super():
+        driver = Driver.query.get_or_404(did)
+    else:
+        return jsonify({'error': 'Unauthorised'}), 403
+
+    raw_limit = request.args.get('limit', '100')
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Limit must be an integer between 1 and 500'}), 400
+    if not 1 <= limit <= 500:
+        return jsonify({'error': 'Limit must be an integer between 1 and 500'}), 400
+
+    history = LocationHistory.query.filter_by(
+        driver_id=driver.id
+    ).order_by(
+        LocationHistory.timestamp.desc(), LocationHistory.id.desc()
+    ).limit(limit).all()
+    return jsonify([{
+        'latitude': item.latitude,
+        'longitude': item.longitude,
+        'server_time': item.timestamp.isoformat() if item.timestamp else None,
+        'device_time': item.device_time.isoformat() if item.device_time else None,
+        'accuracy': item.accuracy,
+        'vehicle': item.vehicle,
+        'speed': item.speed,
+    } for item in history])
 
 @app.route('/api/admin/driver/create', methods=['POST'])
 def admin_create_driver():
@@ -2112,12 +2344,66 @@ def security_headers(response):
     response.headers['X-XSS-Protection'] = '1; mode=block'
     return response
 
+def migrate_location_history_schema(engine):
+    inspector = inspect(engine)
+    if not inspector.has_table('location_history'):
+        raise RuntimeError('location_history table is missing.')
+
+    existing_columns = {
+        column['name'] for column in inspector.get_columns('location_history')
+    }
+    new_columns = (
+        ('device_time', 'TIMESTAMP'),
+        ('accuracy', 'FLOAT'),
+        ('vehicle', 'VARCHAR(120)'),
+    )
+    with engine.begin() as connection:
+        for column_name, column_type in new_columns:
+            if column_name in existing_columns:
+                continue
+            if engine.dialect.name == 'postgresql':
+                statement = (
+                    f'ALTER TABLE location_history ADD COLUMN IF NOT EXISTS '
+                    f'{column_name} {column_type}'
+                )
+            else:
+                statement = (
+                    f'ALTER TABLE location_history ADD COLUMN '
+                    f'{column_name} {column_type}'
+                )
+            connection.execute(text(statement))
+            existing_columns.add(column_name)
+
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_location_history_driver_timestamp '
+            'ON location_history (driver_id, timestamp)'
+        ))
+
+def cleanup_location_history(retention_days=None, now=None):
+    if not app.config['GPS_HISTORY_CLEANUP_ENABLED']:
+        raise RuntimeError(
+            'Location history cleanup is disabled. Set GPS_HISTORY_CLEANUP_ENABLED=1 to run it.'
+        )
+    days = (
+        app.config['GPS_HISTORY_RETENTION_DAYS']
+        if retention_days is None else int(retention_days)
+    )
+    if days <= 0:
+        raise ValueError('retention_days must be positive.')
+    cutoff = (now or datetime.now(timezone.utc).replace(tzinfo=None)) - timedelta(days=days)
+    deleted = LocationHistory.query.filter(
+        LocationHistory.timestamp < cutoff
+    ).delete(synchronize_session=False)
+    db.session.commit()
+    return deleted
+
 # ----------------------------------------
 # INIT DB
 # ----------------------------------------
 def init_db():
     with app.app_context():
         db.create_all()
+        migrate_location_history_schema(db.engine)
         try:
             existing = {c['name'] for c in inspect(db.engine).get_columns('super_admin')}
             for column, statement in (

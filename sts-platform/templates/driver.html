@@ -36,6 +36,8 @@
     <p style="margin-top:0.5rem;font-size:0.85rem;color:var(--muted);">
       Tracking shares your live location with parents on your route
     </p>
+    <p id="location-queue-status" role="status" aria-live="polite"
+       style="margin-top:0.5rem;font-size:0.85rem;color:var(--muted);"></p>
   </div>
 
   <!-- Route Info -->
@@ -83,16 +85,30 @@
   </div>
 </div>
 
+<script src="/static/js/gps-location-queue.js"></script>
 <script>
+const gpsPhoneQueueEnabled = {{ gps_phone_queue_enabled|tojson }};
 let driverData = {};
 let isTracking = false;
+let currentDriverId = null;
 let trackingInterval = null;
 let alertCheckInterval = null;
+let locationQueueFlushPromise = null;
+let locationRetryTimeout = null;
 
 async function init() {
   const sess = await fetch('/api/session').then(r=>r.json());
   if (sess.type !== 'driver') { window.location.href='/'; return; }
+  currentDriverId = sess.driver_id;
   document.getElementById('driver-name').textContent = sess.name;
+  if (gpsPhoneQueueEnabled) {
+    updateLocationQueueStatus().catch(error => {
+      console.error('Could not read the GPS update queue:', error);
+      setLocationQueueStatus('GPS updates cannot be saved on this device.', true);
+    });
+  } else {
+    setLocationQueueStatus('Offline GPS queue is disabled; updates send directly.');
+  }
 
   await loadRouteInfo();
   await checkAlerts();
@@ -275,6 +291,89 @@ async function acknowledgeAlert(alertId) {
   }
 }
 
+function setLocationQueueStatus(message, isError = false) {
+  const status = document.getElementById('location-queue-status');
+  status.textContent = message;
+  status.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+}
+
+async function updateLocationQueueStatus(message) {
+  if (!gpsPhoneQueueEnabled) return;
+  const pending = await GPSLocationQueue.count(currentDriverId);
+  if (message) {
+    setLocationQueueStatus(
+      `${pending} GPS update(s) waiting. ${message}`,
+      pending > 0
+    );
+  } else if (pending > 0) {
+    setLocationQueueStatus(
+      `${pending} GPS update(s) saved on this device and waiting to send.`
+    );
+  } else {
+    setLocationQueueStatus('GPS updates are saved on this device before sending.');
+  }
+}
+
+function scheduleLocationRetry(delaySeconds) {
+  if (locationRetryTimeout) clearTimeout(locationRetryTimeout);
+  locationRetryTimeout = setTimeout(() => {
+    locationRetryTimeout = null;
+    flushLocationQueue();
+  }, delaySeconds * 1000);
+}
+
+async function flushLocationQueue() {
+  if (!gpsPhoneQueueEnabled || !isTracking
+      || locationQueueFlushPromise || currentDriverId === null) return;
+
+  locationQueueFlushPromise = (async () => {
+    while (isTracking) {
+      const result = await GPSLocationQueue.sendNext(
+        currentDriverId,
+        payload => fetch('/api/driver/update-location', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        })
+      );
+      if (!result.queued) {
+        await updateLocationQueueStatus();
+        return;
+      }
+
+      const response = result.response;
+
+      if (!response.ok) {
+        const retryAfter = response.status === 429
+          ? Number(response.headers.get('Retry-After'))
+          : 10;
+        const delay = Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(retryAfter, 3600)
+          : 10;
+        await updateLocationQueueStatus(
+          `Server returned ${response.status}; retrying in ${delay} seconds.`
+        );
+        scheduleLocationRetry(delay);
+        return;
+      }
+    }
+  })();
+
+  try {
+    await locationQueueFlushPromise;
+  } catch (error) {
+    console.error('GPS updates remain queued after a send error:', error);
+    updateLocationQueueStatus('Network or storage error; retrying shortly.')
+      .catch(statusError => {
+        console.error('Could not update GPS queue status:', statusError);
+        setLocationQueueStatus('GPS queue error; saved updates were not removed.', true);
+      });
+    scheduleLocationRetry(10);
+  } finally {
+    locationQueueFlushPromise = null;
+  }
+}
+
 function callParent(phone, name) {
   if (confirm(`Call ${name} at ${phone}?`)) {
     // Log the call action
@@ -328,9 +427,9 @@ async function startTracking() {
     isTracking = true;
     updateTrackingUI();
 
-    // Start sending location updates every 10 seconds
+    flushLocationQueue();
     trackingInterval = setInterval(updateLocation, 10000);
-    updateLocation(); // Send first update immediately
+    updateLocation();
 
   } catch (err) {
     alert('Error starting tracking: ' + err.message);
@@ -352,7 +451,15 @@ async function stopTracking() {
         clearInterval(trackingInterval);
         trackingInterval = null;
       }
+      if (locationRetryTimeout) {
+        clearTimeout(locationRetryTimeout);
+        locationRetryTimeout = null;
+      }
       updateTrackingUI();
+      updateLocationQueueStatus().catch(error => {
+        console.error('Could not update GPS queue status:', error);
+        setLocationQueueStatus('GPS updates remain saved on this device.', true);
+      });
     }
   } catch (err) {
     alert('Error stopping tracking');
@@ -367,17 +474,42 @@ function updateLocation() {
       const { latitude, longitude, speed } = position.coords;
 
       try {
-        await fetch('/api/driver/update-location', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            latitude,
-            longitude,
-            speed: speed ? speed * 3.6 : null // Convert m/s to km/h
-          })
-        });
+        const deviceTime = new Date(position.timestamp);
+        if (!Number.isFinite(deviceTime.getTime())) {
+          throw new Error('The phone returned an invalid GPS timestamp.');
+        }
+        const payload = {
+          latitude,
+          longitude,
+          speed: Number.isFinite(speed) ? speed * 3.6 : null,
+          device_time: deviceTime.toISOString(),
+          accuracy: Number.isFinite(position.coords.accuracy)
+            ? position.coords.accuracy
+            : null,
+          vehicle: driverData.vehicle || null
+        };
+        if (gpsPhoneQueueEnabled) {
+          await GPSLocationQueue.enqueue(currentDriverId, payload);
+          await updateLocationQueueStatus();
+          await flushLocationQueue();
+        } else {
+          const response = await fetch('/api/driver/update-location', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+          });
+          if (!response.ok) {
+            throw new Error(`The server returned ${response.status}.`);
+          }
+        }
       } catch (err) {
-        console.error('Error updating location:', err);
+        console.error('Could not send the GPS update:', err);
+        setLocationQueueStatus(
+          gpsPhoneQueueEnabled
+            ? 'GPS update could not be saved; check device storage and try again.'
+            : 'GPS update could not be sent; check the network and try again.',
+          true
+        );
       }
     },
     (error) => {

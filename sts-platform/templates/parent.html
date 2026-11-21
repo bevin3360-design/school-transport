@@ -140,7 +140,7 @@ async function init() {
 }
 
 function initMap() {
-  // Initialize map centered on Nairobi, Kenya
+  // Initialize map centered on Nairobi, Kenya without implying a bus is there.
   map = L.map('map').setView([-1.2921, 36.8219], 13);
   
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -148,16 +148,25 @@ function initMap() {
     maxZoom: 19
   }).addTo(map);
   
-  // Create custom bus icon
-  const busIcon = L.divIcon({
-    html: '<div style="font-size:24px;">🚌</div>',
+}
+
+function busIconForState(state) {
+  const color = state === 'live' ? '#16804a'
+    : state === 'delayed' ? '#9a6a18' : '#a33';
+  return L.divIcon({
+    html: `<div style="font-size:24px;background:${color};border-radius:50%;padding:4px;">🚌</div>`,
     className: '',
-    iconSize: [30, 30],
-    iconAnchor: [15, 15]
+    iconSize: [38, 38],
+    iconAnchor: [19, 19]
   });
-  
-  busMarker = L.marker([-1.2921, 36.8219], {icon: busIcon}).addTo(map);
-  busMarker.bindPopup('Bus location will appear here when tracking starts');
+}
+
+function hideBusMarker() {
+  if (busMarker) {
+    map.removeLayer(busMarker);
+    busMarker = null;
+    map.setView([-1.2921, 36.8219], 13);
+  }
 }
 
 async function loadTrackingInfo() {
@@ -178,13 +187,24 @@ async function loadTrackingInfo() {
         <p style="margin:0.3rem 0;font-size:0.9rem;"><strong>Type:</strong> ${data.route_type} Route</p>
       </div>`;
     
+    const stateLabels = {
+      live: 'Live',
+      delayed: 'Delayed',
+      stale: 'Stale location',
+      unavailable: 'Tracking unavailable'
+    };
+    const locationState = data.freshness_enabled && stateLabels[data.location_state]
+      ? data.location_state : data.tracking ? 'live' : 'unavailable';
+    const stateColor = locationState === 'live' ? 'var(--success)'
+      : locationState === 'unavailable' ? 'var(--muted)' : '#9a6a18';
+
     // Display driver info
     routeHtml += `
       <div style="background:var(--bg);padding:1rem;border-radius:8px;margin-top:0.8rem;">
         <h4 style="margin:0 0 0.5rem 0;">👨‍✈️ Driver</h4>
         <p style="margin:0.3rem 0;font-size:0.9rem;"><strong>${data.driver.name}</strong></p>
         <p style="margin:0.3rem 0;font-size:0.85rem;color:var(--muted);">
-          Status: ${data.driver.is_tracking ? '<span style="color:var(--success);">● Tracking Active</span>' : '<span style="color:var(--muted);">○ Offline</span>'}
+          Status: <span style="color:${stateColor};">${stateLabels[locationState]}</span>
         </p>
       </div>`;
     
@@ -206,33 +226,59 @@ async function loadTrackingInfo() {
     document.getElementById('route-info').innerHTML = routeHtml;
     
     // Update tracking status and map
-    if (data.tracking && data.latitude && data.longitude) {
-      const lastUpdate = new Date(data.last_update);
-      const timeAgo = Math.floor((new Date() - lastUpdate) / 1000 / 60);
-      const timeText = timeAgo < 1 ? 'Just now' : `${timeAgo} min ago`;
-      
+    const hasLocation = locationState !== 'unavailable'
+      && Number.isFinite(Number(data.latitude))
+      && Number.isFinite(Number(data.longitude));
+    if (hasLocation) {
+      const age = Number(data.location_age_seconds);
+      const secondsAgo = data.location_age_seconds !== null
+        && data.location_age_seconds !== undefined && Number.isFinite(age)
+        ? Math.max(0, Math.floor(age)) : null;
+      const timeText = secondsAgo === null
+        ? 'update time unavailable' : `${secondsAgo} seconds ago`;
+
+      const stateText = data.freshness_enabled ? {
+        live: 'Bus location is live',
+        delayed: 'Bus location is delayed',
+        stale: 'Bus location is stale'
+      }[locationState] : 'Bus is being tracked';
       document.getElementById('tracking-status').innerHTML = `
         <div style="display:flex;align-items:center;gap:0.5rem;">
-          <span style="font-size:1.2rem;color:var(--success);">●</span>
+          <span style="font-size:1.2rem;color:${stateColor};">●</span>
           <div>
-            <div style="font-weight:600;color:var(--success);">Bus is being tracked</div>
-            <div style="font-size:0.85rem;color:var(--muted);">Last updated: ${timeText}</div>
+            <div style="font-weight:600;color:${stateColor};">${stateText}</div>
+            <div style="font-size:0.85rem;color:var(--muted);">Updated ${timeText}</div>
           </div>
         </div>`;
       
       // Update map
       const busPos = [data.latitude, data.longitude];
-      busMarker.setLatLng(busPos);
-      busMarker.bindPopup(`<strong>${data.driver.name}</strong><br>${data.route_name}<br>Updated: ${timeText}`).openPopup();
+      if (!busMarker) {
+        busMarker = L.marker(busPos, {icon: busIconForState(locationState)}).addTo(map);
+      } else {
+        busMarker.setLatLng(busPos).setIcon(busIconForState(locationState));
+      }
+      busMarker.bindPopup(`<strong>${data.driver.name}</strong><br>${data.route_name}<br>${stateText}<br>Updated: ${timeText}`);
       map.setView(busPos, 15);
       
     } else {
+      hideBusMarker();
+      const lastAgeText = data.location_age_seconds !== null
+        && data.location_age_seconds !== undefined
+        ? ` (last GPS update: ${data.location_age_seconds} seconds ago)` : '';
+      const unavailableDetail = !data.shift_active
+        ? 'The school shift is not active.'
+        : data.driver.is_tracking
+          ? `The last GPS position is too old to display${lastAgeText}.`
+          : 'The driver is not currently sharing GPS.';
+      const unavailableTitle = locationState === 'stale'
+        ? 'Stale location · hidden for safety' : 'Tracking unavailable';
       document.getElementById('tracking-status').innerHTML = `
         <div style="display:flex;align-items:center;gap:0.5rem;">
-          <span style="font-size:1.2rem;color:var(--muted);">○</span>
+          <span style="font-size:1.2rem;color:${stateColor};">○</span>
           <div>
-            <div style="font-weight:600;color:var(--muted);">Bus tracking not active</div>
-            <div style="font-size:0.85rem;color:var(--muted);">Driver has not started tracking yet</div>
+            <div style="font-weight:600;color:${stateColor};">${unavailableTitle}</div>
+            <div style="font-size:0.85rem;color:var(--muted);">${unavailableDetail}</div>
           </div>
         </div>`;
       
@@ -438,6 +484,7 @@ function callDriver() {
 }
 
 function displayError(message) {
+  hideBusMarker();
   document.getElementById('tracking-status').innerHTML = `
     <div style="color:var(--danger);font-size:0.9rem;">${message}</div>`;
 }
