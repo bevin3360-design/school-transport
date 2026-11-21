@@ -658,10 +658,13 @@ def parent_track_bus():
             }
     
     route = Route.query.get(parent.assigned_route_id)
-    
+    school = School.query.get(parent.school_id)
+    shift_active = bool(school and route.active and (
+        school.morning_active if route.is_morning else school.evening_active))
     response = {
         'route_name': route.name,
         'route_type': 'Morning' if route.is_morning else 'Evening',
+        'shift_active': shift_active,
         'driver': {
             'name': driver.name if driver else 'Not assigned',
             'phone': driver.phone if driver else None,
@@ -671,7 +674,7 @@ def parent_track_bus():
         'tracking': False
     }
     
-    if driver and driver.is_tracking and driver.current_latitude:
+    if shift_active and driver and driver.is_tracking and driver.current_latitude:
         response['tracking'] = True
         response['latitude'] = driver.current_latitude
         response['longitude'] = driver.current_longitude
