@@ -431,6 +431,19 @@ def get_school_or_403():
         return None, (jsonify({'error':'School account suspended. Contact support.'}), 403)
     return s, None
 
+def route_in_school(route_id, school_id):
+    """Resolve an optional route id inside one school; empty clears the assignment."""
+    if route_id in (None, ''):
+        return None, None
+    try:
+        route_id = int(route_id)
+    except (TypeError, ValueError):
+        return None, (jsonify({'error':'Invalid route'}), 400)
+    route = Route.query.filter_by(id=route_id, school_id=school_id).first()
+    if not route:
+        return None, (jsonify({'error':'Route not found for your school'}), 400)
+    return route, None
+
 def is_weekend(d): return d.weekday() >= 5
 
 # ── ALLOCATION ALGORITHM ────────────────
@@ -777,14 +790,18 @@ def parent_track_bus():
     
     teacher_info = None
     if assignment:
-        teacher = Teacher.query.get(assignment.teacher_id)
+        teacher = Teacher.query.filter_by(
+            id=assignment.teacher_id, school_id=parent.school_id).first()
         if teacher:
             teacher_info = {
                 'name': teacher.name,
                 'teaching_code': teacher.teaching_code
             }
-    
-    route = Route.query.get(parent.assigned_route_id)
+
+    route = Route.query.filter_by(
+        id=parent.assigned_route_id, school_id=parent.school_id).first()
+    if not route:
+        return jsonify({'error': 'No route assigned to your child'}), 400
     school = School.query.get(parent.school_id)
     shift_active = bool(school and route.active and (
         school.morning_active if route.is_morning else school.evening_active))
@@ -1011,8 +1028,11 @@ def driver_route_info():
     if not driver.assigned_route_id:
         return jsonify({'error': 'No route assigned'}), 400
     
-    route = Route.query.get(driver.assigned_route_id)
-    
+    route = Route.query.filter_by(
+        id=driver.assigned_route_id, school_id=driver.school_id).first()
+    if not route:
+        return jsonify({'error': 'No route assigned'}), 400
+
     # Get today's teacher
     today = date.today()
     assignment = DutyAssignment.query.filter_by(
@@ -1020,10 +1040,11 @@ def driver_route_info():
         route_id=driver.assigned_route_id,
         duty_date=today
     ).first()
-    
+
     teacher_info = None
     if assignment:
-        teacher = Teacher.query.get(assignment.teacher_id)
+        teacher = Teacher.query.filter_by(
+            id=assignment.teacher_id, school_id=driver.school_id).first()
         if teacher:
             teacher_info = {
                 'name': teacher.name,
@@ -1095,13 +1116,17 @@ def admin_create_driver():
     problem = password_error(password, phone)
     if problem:
         return jsonify({'error': problem}), 400
-    
+
+    route, problem = route_in_school(route_id, current_school_id())
+    if problem:
+        return problem
+
     driver = Driver(
         school_id=current_school_id(),
         name=name,
         phone=phone,
         license_number=license,
-        assigned_route_id=route_id if route_id else None
+        assigned_route_id=route.id if route else None
     )
     driver.set_password(password)
     db.session.add(driver)
@@ -1120,7 +1145,11 @@ def admin_edit_driver(did):
     if 'phone' in data: driver.phone = sanitize(data['phone'])
     if 'license' in data: driver.license_number = sanitize(data['license'])
     if 'active' in data: driver.active = bool(data['active'])
-    if 'assigned_route_id' in data: driver.assigned_route_id = data['assigned_route_id']
+    if 'assigned_route_id' in data:
+        route, problem = route_in_school(data['assigned_route_id'], current_school_id())
+        if problem:
+            return problem
+        driver.assigned_route_id = route.id if route else None
     if 'password' in data and data['password']:
         problem = password_error(data['password'], driver.phone)
         if problem:
@@ -1176,14 +1205,18 @@ def admin_create_parent():
         return jsonify({'error': problem}), 400
     if Parent.query.filter_by(phone=phone).first():
         return jsonify({'error': 'Phone number already registered'}), 400
-    
+
+    route, problem = route_in_school(route_id, current_school_id())
+    if problem:
+        return problem
+
     parent = Parent(
         school_id=current_school_id(),
         name=name,
         phone=phone,
         child_name=child_name,
         child_class=child_class,
-        assigned_route_id=route_id if route_id else None
+        assigned_route_id=route.id if route else None
     )
     parent.set_password(password)
     db.session.add(parent)
@@ -1203,7 +1236,11 @@ def admin_edit_parent(pid):
     if 'child_name' in data: parent.child_name = sanitize(data['child_name'])
     if 'child_class' in data: parent.child_class = sanitize(data['child_class'])
     if 'active' in data: parent.active = bool(data['active'])
-    if 'assigned_route_id' in data: parent.assigned_route_id = data['assigned_route_id']
+    if 'assigned_route_id' in data:
+        route, problem = route_in_school(data['assigned_route_id'], current_school_id())
+        if problem:
+            return problem
+        parent.assigned_route_id = route.id if route else None
     if 'password' in data and data['password']:
         problem = password_error(data['password'], parent.phone)
         if problem:
@@ -1297,11 +1334,15 @@ def teacher_add_parent():
     if Parent.query.filter_by(phone=phone).first():
         return jsonify({'error': 'Phone number already registered'}), 400
 
+    route, problem = route_in_school(route_id, teacher.school_id)
+    if problem:
+        return problem
+
     parent = Parent(
         school_id=teacher.school_id,
         name=name, phone=phone,
         child_name=child_name, child_class=child_class,
-        assigned_route_id=route_id if route_id else None
+        assigned_route_id=route.id if route else None
     )
     parent.set_password(password)
     db.session.add(parent)
@@ -1966,8 +2007,16 @@ def mark_absent(aid):
 def replace_teacher(aid):
     if not is_school_admin(): return jsonify({'error':'Unauthorised'}), 403
     a = DutyAssignment.query.filter_by(id=aid, school_id=current_school_id()).first_or_404()
-    data = request.get_json()
-    a.teacher_id = data['teacher_id']
+    data = request.get_json(silent=True) or {}
+    try:
+        teacher_id = int(data.get('teacher_id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid teacher'}), 400
+    teacher = Teacher.query.filter_by(
+        id=teacher_id, school_id=current_school_id()).first()
+    if not teacher:
+        return jsonify({'error': 'Teacher not found for your school'}), 400
+    a.teacher_id = teacher.id
     a.status = 'assigned'
     db.session.commit()
     return jsonify({'success': True})
