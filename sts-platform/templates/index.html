@@ -472,6 +472,11 @@ async function parentSelfRegister() {
     errEl.classList.remove('hidden');
     return;
   }
+  if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+    errEl.textContent = 'Password must be at least 8 characters with letters and numbers';
+    errEl.classList.remove('hidden');
+    return;
+  }
 
   const r = await fetch('/api/parent/register', {
     method: 'POST',

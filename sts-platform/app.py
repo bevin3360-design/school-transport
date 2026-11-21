@@ -308,6 +308,15 @@ def sanitize(v, ml=200):
     if not v: return ''
     return re.sub(r'[<>\\]', '', str(v).strip()[:ml])
 
+def password_error(password, username=''):
+    if not isinstance(password, str) or not 8 <= len(password) <= 128:
+        return 'Password must be between 8 and 128 characters'
+    if not (re.search(r'[A-Za-z]', password) and re.search(r'\d', password)):
+        return 'Password must include at least one letter and one number'
+    if username and password.strip().lower() == str(username).strip().lower():
+        return 'Password must not match the username'
+    return None
+
 def get_settings():
     """Always returns the single PlatformSettings row, creating it if missing."""
     s = PlatformSettings.query.first()
@@ -953,6 +962,9 @@ def admin_create_driver():
     
     if not all([name, phone, password]):
         return jsonify({'error': 'Name, phone, and password required'}), 400
+    problem = password_error(password, phone)
+    if problem:
+        return jsonify({'error': problem}), 400
     
     driver = Driver(
         school_id=current_school_id(),
@@ -980,6 +992,9 @@ def admin_edit_driver(did):
     if 'active' in data: driver.active = bool(data['active'])
     if 'assigned_route_id' in data: driver.assigned_route_id = data['assigned_route_id']
     if 'password' in data and data['password']:
+        problem = password_error(data['password'], driver.phone)
+        if problem:
+            return jsonify({'error': problem}), 400
         driver.set_password(data['password'])
     
     db.session.commit()
@@ -1025,6 +1040,9 @@ def admin_create_parent():
     
     if not all([name, phone, password]):
         return jsonify({'error': 'Name, phone, and password required'}), 400
+    problem = password_error(password, phone)
+    if problem:
+        return jsonify({'error': problem}), 400
     if Parent.query.filter_by(phone=phone).first():
         return jsonify({'error': 'Phone number already registered'}), 400
     
@@ -1056,6 +1074,9 @@ def admin_edit_parent(pid):
     if 'active' in data: parent.active = bool(data['active'])
     if 'assigned_route_id' in data: parent.assigned_route_id = data['assigned_route_id']
     if 'password' in data and data['password']:
+        problem = password_error(data['password'], parent.phone)
+        if problem:
+            return jsonify({'error': problem}), 400
         parent.set_password(data['password'])
     
     db.session.commit()
@@ -1085,6 +1106,9 @@ def driver_add_parent():
 
     if not all([name, phone, password]):
         return jsonify({'error': 'Name, phone and password are required'}), 400
+    problem = password_error(password, phone)
+    if problem:
+        return jsonify({'error': problem}), 400
     if Parent.query.filter_by(phone=phone).first():
         return jsonify({'error': 'Phone number already registered'}), 400
 
@@ -1118,6 +1142,9 @@ def teacher_add_parent():
 
     if not all([name, phone, password]):
         return jsonify({'error': 'Name, phone and password are required'}), 400
+    problem = password_error(password, phone)
+    if problem:
+        return jsonify({'error': problem}), 400
     if Parent.query.filter_by(phone=phone).first():
         return jsonify({'error': 'Phone number already registered'}), 400
 
@@ -1153,6 +1180,10 @@ def parent_register():
     if not school:
         return jsonify({'error': 'School code not found'}), 404
 
+    problem = password_error(password, phone)
+    if problem:
+        return jsonify({'error': problem}), 400
+
     if Parent.query.filter_by(phone=phone).first():
         return jsonify({'error': 'Phone number already registered'}), 400
 
@@ -1187,6 +1218,10 @@ def register_school():
         return jsonify({'error': 'All fields required'}), 400
     if School.query.filter_by(code=code).first():
         return jsonify({'error': f'School code {code} already exists'}), 400
+
+    problem = password_error(admin_password, admin_username)
+    if problem:
+        return jsonify({'error': problem}), 400
 
     trial_end = date.today() + timedelta(days=TRIAL_DAYS)
     school = School(name=name, code=code, email=email, phone=phone,
@@ -1372,8 +1407,9 @@ def super_create_school():
         return jsonify({'error': 'School name, code, admin username and password are required'}), 400
     if School.query.filter_by(code=code).first():
         return jsonify({'error': f'School code {code} already exists'}), 400
-    if len(admin_password) < 6:
-        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    problem = password_error(admin_password, admin_username)
+    if problem:
+        return jsonify({'error': problem}), 400
 
     school = School(
         name=name, code=code, email=email, phone=phone,
@@ -1418,11 +1454,12 @@ def super_reset_admin_password(sid):
     if not is_super(): return jsonify({'error':'Unauthorised'}), 403
     data = request.get_json()
     new_password = data.get('password','')
-    if len(new_password) < 6:
-        return jsonify({'error': 'Password must be at least 6 characters'}), 400
     admin = SchoolAdmin.query.filter_by(school_id=sid).first()
     if not admin:
         return jsonify({'error': 'No admin found for this school'}), 404
+    problem = password_error(new_password, admin.username)
+    if problem:
+        return jsonify({'error': problem}), 400
     admin.set_password(new_password)
     db.session.commit()
     log_action(None, 'super', session.get('super_name'),

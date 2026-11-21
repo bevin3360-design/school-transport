@@ -129,8 +129,8 @@ async function createSchool() {
     err.textContent = 'School name, code, admin username and password are required.';
     err.classList.remove('hidden'); return;
   }
-  if (admin_password.length < 6) {
-    err.textContent = 'Password must be at least 6 characters.';
+  if (admin_password.length < 8) {
+    err.textContent = 'Password must be at least 8 characters with letters and numbers.';
     err.classList.remove('hidden'); return;
   }
 
@@ -229,7 +229,7 @@ async function resetPassword() {
   const err = document.getElementById('rp-err');
   err.classList.add('hidden');
 
-  if (pw.length < 6) { err.textContent='Password must be at least 6 characters.'; err.classList.remove('hidden'); return; }
+  if (pw.length < 8) { err.textContent='Password must be at least 8 characters with letters and numbers.'; err.classList.remove('hidden'); return; }
   if (pw !== pw2)    { err.textContent='Passwords do not match.'; err.classList.remove('hidden'); return; }
 
   const r = await fetch(`/api/super/school/${id}/reset-password`, {
