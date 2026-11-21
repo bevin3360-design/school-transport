@@ -35,15 +35,30 @@ def main():
             f'{MAX_PASSWORD_LENGTH} characters.'
         )
 
+    if password.lower() == username.lower():
+        raise SystemExit('Password must not match the username.')
+
     with application.app.app_context():
         admin = application.SuperAdmin.query.filter_by(username=username).first()
+        created = False
         if not admin:
-            raise SystemExit('No super-admin account exists with that username.')
+            confirm = input(
+                f'No super-admin "{username}" exists. Create it with this password? '
+                '[yes/NO]: '
+            ).strip().lower()
+            if confirm != 'yes':
+                raise SystemExit('No account was changed.')
+            admin = application.SuperAdmin(username=username)
+            application.db.session.add(admin)
+            created = True
 
         admin.set_password(password)
         application.db.session.commit()
 
-    print('Super-admin password updated. Sign in with the new password.')
+    if created:
+        print('Super-admin account created. Sign in with the new password.')
+    else:
+        print('Super-admin password updated. Sign in with the new password.')
 
 
 if __name__ == '__main__':

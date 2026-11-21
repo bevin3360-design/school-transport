@@ -10,11 +10,33 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, date, timedelta
 from functools import wraps
 import math
-import os, re, json
+import os, re, json, secrets
 from extensions import db
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'STS-PLATFORM-2026-SUPERKEY')
+
+SECRET_KEY = os.environ.get('SECRET_KEY', '').strip()
+IS_HOSTED = bool(os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RENDER'))
+if not SECRET_KEY:
+    if IS_HOSTED or os.environ.get('FLASK_ENV') == 'production':
+        raise RuntimeError(
+            'SECRET_KEY must be set in the hosting environment. Refusing to start '
+            'with a known fallback key.'
+        )
+    SECRET_KEY = secrets.token_hex(32)
+    print('WARNING: SECRET_KEY is not set; using a random per-process key. '
+          'Sessions will not survive a restart.', flush=True)
+app.config['SECRET_KEY'] = SECRET_KEY
+
+_cookie_secure = os.environ.get('STS_COOKIE_SECURE')
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=(
+        _cookie_secure == '1' if _cookie_secure is not None else IS_HOSTED
+    ),
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+)
 
 # ── DATABASE: PostgreSQL in production, SQLite locally ──
 DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
@@ -1745,11 +1767,25 @@ def init_db():
     with app.app_context():
         db.create_all()
         if not SuperAdmin.query.first():
-            sa = SuperAdmin(username='superadmin')
-            sa.set_password('STS@2026#Owner')
-            db.session.add(sa)
-            db.session.commit()
-            print('Super admin created: superadmin / STS@2026#Owner')
+            bootstrap_username = os.environ.get('SUPERADMIN_USERNAME', '').strip()
+            bootstrap_password = os.environ.get('SUPERADMIN_PASSWORD', '')
+            if bootstrap_username and bootstrap_password:
+                if len(bootstrap_password) < 12:
+                    raise RuntimeError(
+                        'SUPERADMIN_PASSWORD must be at least 12 characters.'
+                    )
+                sa = SuperAdmin(username=bootstrap_username)
+                sa.set_password(bootstrap_password)
+                db.session.add(sa)
+                db.session.commit()
+                print('Super admin created from SUPERADMIN_USERNAME.', flush=True)
+            else:
+                print(
+                    'No super admin exists. Set SUPERADMIN_USERNAME and '
+                    'SUPERADMIN_PASSWORD, or run scripts/reset_superadmin_password.py '
+                    'to create one. No default account was created.',
+                    flush=True,
+                )
         if not PlatformSettings.query.first():
             db.session.add(PlatformSettings())
             db.session.commit()
