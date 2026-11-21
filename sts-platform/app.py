@@ -19,19 +19,20 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'STS-PLATFORM-2026-SUPER
 # ── DATABASE: PostgreSQL in production, SQLite locally ──
 DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
 if DATABASE_URL:
-    # Render gives postgres:// but SQLAlchemy needs postgresql://
     if DATABASE_URL.startswith('postgres://'):
         DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-    if DATABASE_URL.startswith('postgresql://'):
+    is_postgres = DATABASE_URL.startswith('postgresql')
+    if is_postgres and not DATABASE_URL.startswith('postgresql+psycopg://'):
         DATABASE_URL = DATABASE_URL.replace(
             'postgresql://', 'postgresql+psycopg://', 1
         )
     app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
-    # PostGIS may be installed in ride_hailing rather than public; keep both
-    # on the search_path so ST_* functions and the geometry type resolve.
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'connect_args': {'options': '-csearch_path=public,ride_hailing'}
-    }
+    if is_postgres:
+        # PostGIS may be installed in ride_hailing rather than public; keep both
+        # on the search_path so ST_* functions and the geometry type resolve.
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            'connect_args': {'options': '-csearch_path=public,ride_hailing'}
+        }
 else:
     # No DATABASE_URL — use SQLite (works on Render free tier too)
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -1758,8 +1759,10 @@ def init_db():
 from ride_api import ride_bp
 app.register_blueprint(ride_bp)
 
-# Always initialise DB
-init_db()
+# Initialise the database during normal app startup. Recovery tooling can skip
+# this to avoid creating bootstrap accounts while importing the application.
+if os.environ.get('STS_SKIP_DB_INIT') != '1':
+    init_db()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))

@@ -28,9 +28,9 @@ class RideSchemaArtifactTests(unittest.TestCase):
         ))
 
         self.assertEqual(table_names, EXPECTED_TABLES)
-        self.assertIn('CREATE EXTENSION IF NOT EXISTS postgis;', schema)
-        self.assertIn('CREATE EXTENSION IF NOT EXISTS pgcrypto;', schema)
-        self.assertIn('CREATE EXTENSION IF NOT EXISTS citext;', schema)
+        self.assertIn('CREATE EXTENSION IF NOT EXISTS postgis SCHEMA public;', schema)
+        self.assertIn('CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA public;', schema)
+        self.assertIn('CREATE EXTENSION IF NOT EXISTS citext SCHEMA public;', schema)
         self.assertIn('SET search_path TO ride_hailing, public;', schema)
         self.assertIn('CREATE INDEX idx_offers_expiry', schema)
         self.assertIn('CREATE UNIQUE INDEX idx_trip_shares_token_hash', schema)
