@@ -1758,8 +1758,8 @@ def init_db():
 from ride_api import ride_bp
 app.register_blueprint(ride_bp)
 
-# Always initialise DB
-init_db()
+    if os.environ.get('STS_SKIP_DB_INIT') != '1':
+    init_db()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
