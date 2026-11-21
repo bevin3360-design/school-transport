@@ -57,12 +57,23 @@ Web sign-in uses signed Flask sessions; OTP delivery, mobile refresh-token flows
 delivery, private document storage, and a live routing provider must be configured
 separately before relying on those services in production.
 
+## Super-admin security
+Production deployments must set a strong `SECRET_KEY`; hosted deployments refuse to start
+without it. No default super-admin password is created or logged.
+
+To bootstrap a new database, set `SUPERADMIN_INITIAL_PASSWORD` (12–128 characters) and,
+optionally, `SUPERADMIN_USERNAME` (defaults to `superadmin`) before startup, then remove
+them. To rotate an existing Render account without shell access, set
+`SUPERADMIN_RESET_PASSWORD` in the service environment, wait for the deploy, then remove it
+and wait for the follow-up deploy. The app never logs the value. See
+[Recovering the platform super-admin password](#recovering-the-platform-super-admin-password)
+for the interactive alternative.
+
 ## Deploying
 
 ### Railway
 1. Create a Railway project and add a PostgreSQL 15+ database with PostGIS available.
-2. Set `DATABASE_URL`, `SECRET_KEY`, and, on first boot, `SUPERADMIN_USERNAME` and
-   `SUPERADMIN_PASSWORD`.
+2. Set `DATABASE_URL`, `SECRET_KEY`, and, on first boot, the super-admin bootstrap variables.
 3. Connect the repository. Either the repository root or `sts-platform` works as the service
    root; both `railway.toml` files point at the same start script.
 4. Leave `RIDE_HAILING_ENABLED` unset until the Phase 7 checks pass.

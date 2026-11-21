@@ -68,6 +68,7 @@ def add_csrf_to_pages(response):
 
 # ── DATABASE: PostgreSQL in production, SQLite locally ──
 DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+
 if DATABASE_URL:
     if DATABASE_URL.startswith('postgres://'):
         DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
@@ -2110,25 +2111,44 @@ def init_db():
             except SQLAlchemyError as exc:
                 print(f'WARNING: could not enforce {label}: {exc}', flush=True)
         if not SuperAdmin.query.first():
-            bootstrap_username = os.environ.get('SUPERADMIN_USERNAME', '').strip()
-            bootstrap_password = os.environ.get('SUPERADMIN_PASSWORD', '')
-            if bootstrap_username and bootstrap_password:
-                if len(bootstrap_password) < 12:
+            bootstrap_password = (
+                os.environ.get('SUPERADMIN_INITIAL_PASSWORD')
+                or os.environ.get('SUPERADMIN_PASSWORD', '')
+            )
+            if bootstrap_password:
+                if not 12 <= len(bootstrap_password) <= 128:
                     raise RuntimeError(
-                        'SUPERADMIN_PASSWORD must be at least 12 characters.'
+                        'Super-admin bootstrap password must be between 12 and 128 characters.'
                     )
+                bootstrap_username = (
+                    os.environ.get('SUPERADMIN_USERNAME', '').strip() or 'superadmin'
+                )
                 sa = SuperAdmin(username=bootstrap_username)
                 sa.set_password(bootstrap_password)
                 db.session.add(sa)
                 db.session.commit()
-                print('Super admin created from SUPERADMIN_USERNAME.', flush=True)
+                print('Initial super-admin account created.', flush=True)
             else:
                 print(
-                    'No super admin exists. Set SUPERADMIN_USERNAME and '
-                    'SUPERADMIN_PASSWORD, or run scripts/reset_superadmin_password.py '
-                    'to create one. No default account was created.',
+                    'No super-admin account exists. Set SUPERADMIN_INITIAL_PASSWORD '
+                    '(or SUPERADMIN_USERNAME and SUPERADMIN_PASSWORD), or run '
+                    'scripts/reset_superadmin_password.py to create one. '
+                    'No default account was created.',
                     flush=True,
                 )
+        reset_password = os.environ.get('SUPERADMIN_RESET_PASSWORD')
+        if reset_password:
+            if not 12 <= len(reset_password) <= 128:
+                raise RuntimeError(
+                    'SUPERADMIN_RESET_PASSWORD must be between 12 and 128 characters.'
+                )
+            username = os.environ.get('SUPERADMIN_USERNAME', 'superadmin')
+            admin = SuperAdmin.query.filter_by(username=username).first()
+            if not admin:
+                raise RuntimeError('SUPERADMIN_RESET_PASSWORD target account was not found.')
+            admin.set_password(reset_password)
+            db.session.commit()
+            print('Super-admin password rotated from deployment configuration.')
         if not PlatformSettings.query.first():
             db.session.add(PlatformSettings())
             db.session.commit()
