@@ -82,10 +82,38 @@ for the interactive alternative.
 
 ### Render
 1. Create an account at https://render.com and push this repository to GitHub.
-2. New → Web Service → connect the repository.
+2. New → Web Service → connect the repository, root directory `sts-platform`.
 3. Build command: `pip install -r requirements.txt`.
-4. Start command: `python sts-platform/scripts/start_railway.py`.
+4. Start command: `python scripts/start_railway.py`. It applies the ride schema,
+   initialises the database once, then starts Gunicorn on `$PORT`.
 5. Set the environment variables above; do not rely on generated defaults for `SECRET_KEY`.
+6. Free instances sleep after inactivity and wake on the next request. Keeping the app
+   always running requires a paid instance type; no start command can change that.
+
+## Backups
+
+Take an encrypted copy of the live database and keep it off the machine that runs the app:
+
+```
+python scripts/backup_production.py --url-file C:/Users/you/sts-backups/db_url.txt \
+    --bundle-repo . --keep 30
+```
+
+- The database URL is read from `--url-file` or `STS_BACKUP_DB_URL` and is never printed.
+  Keep that file outside the repository and out of any sync folder that is not private.
+- The script runs `pg_dump --format=custom`, verifies the archive with `pg_restore --list`,
+  writes a SHA-256 sidecar, encrypts with GPG AES-256 (`STS_BACKUP_PASSPHRASE` or a prompt),
+  deletes the plaintext, and prunes older backups.
+- `--bundle-repo .` also stores an encrypted `git bundle` of the code next to the dump.
+- Prove a backup opens before you need it: create an empty scratch database, then run
+  `python scripts/restore_backup.py --backup <file>.dump.gpg` with `STS_RESTORE_DB_URL`
+  set to that scratch database. It refuses to restore into a database that already has tables.
+- Copy the `sts-*.dump.gpg`, `sts-*.sha256`, `sts-repo-*.bundle.gpg`, and `sts-*.json` files
+  to two offline media (external disk plus an encrypted cloud folder). A backup on the
+  same machine or same cloud account as the app does not survive an account compromise.
+- Schedule it with Windows Task Scheduler, for example daily at 20:00:
+  `schtasks /Create /SC DAILY /TN "STS backup" /ST 20:00 /TR "python C:\path\to\school-transport\scripts\backup_production.py --url-file C:\Users\you\sts-backups\db_url.txt --bundle-repo C:\path\to\school-transport"`
+- `sts-platform/scripts/cleanup_gps_history.py` deletes old GPS rows; it is not a backup.
 
 ## Admin Features
 - Set school name
