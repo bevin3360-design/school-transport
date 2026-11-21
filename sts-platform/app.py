@@ -159,6 +159,13 @@ class DutyAssignment(db.Model):
     teacher    = db.relationship('Teacher', backref='assignments')
     route      = db.relationship('Route', backref='assignments')
 
+    __table_args__ = (
+        db.UniqueConstraint('school_id', 'teacher_id', 'duty_date', 'is_morning',
+                            name='ux_duty_teacher_date_shift'),
+        db.UniqueConstraint('school_id', 'route_id', 'duty_date', 'is_morning',
+                            name='ux_duty_route_date_shift'),
+    )
+
 class Payment(db.Model):
     id          = db.Column(db.Integer, primary_key=True)
     school_id   = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=False)
@@ -1640,7 +1647,11 @@ def generate_roster_api():
     if is_weekend(target):
         return jsonify({'error':'Cannot generate roster for weekends'}), 400
     assignments = generate_roster(school.id, target)
-    save_roster(school.id, assignments, target)
+    try:
+        save_roster(school.id, assignments, target)
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'error': 'Roster changed while generating; reload and try again'}), 409
     log_action(school.id, 'admin', session.get('school_name'), f'Generated roster for {target}')
     return jsonify({'success': True, 'assignments': assignments})
 
@@ -1797,6 +1808,19 @@ def init_db():
                 ))
         except SQLAlchemyError as exc:
             print(f'WARNING: could not enforce unique payment codes: {exc}', flush=True)
+        for label, statement in (
+            ('one teacher per duty shift',
+             'CREATE UNIQUE INDEX IF NOT EXISTS ux_duty_teacher_date_shift '
+             'ON duty_assignment (school_id, teacher_id, duty_date, is_morning)'),
+            ('one teacher per route shift',
+             'CREATE UNIQUE INDEX IF NOT EXISTS ux_duty_route_date_shift '
+             'ON duty_assignment (school_id, route_id, duty_date, is_morning)'),
+        ):
+            try:
+                with db.engine.begin() as connection:
+                    connection.execute(text(statement))
+            except SQLAlchemyError as exc:
+                print(f'WARNING: could not enforce {label}: {exc}', flush=True)
         if not SuperAdmin.query.first():
             bootstrap_username = os.environ.get('SUPERADMIN_USERNAME', '').strip()
             bootstrap_password = os.environ.get('SUPERADMIN_PASSWORD', '')
