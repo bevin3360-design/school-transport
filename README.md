@@ -64,9 +64,11 @@ start if it is missing; local SQLite development uses a process-random key.
 
 No default super-admin password is created or logged. To bootstrap a new database, set
 `SUPERADMIN_INITIAL_PASSWORD` (at least 12 characters) before startup, then remove it.
-To rotate an existing account, open the Render service shell in the `sts-platform`
-service root and run `python scripts/reset_superadmin_password.py`. The script hides
-password input and does not print or store the new password.
+To rotate an existing Render account, set `SUPERADMIN_RESET_PASSWORD` to a new password
+(at least 12 characters) in the service's Environment settings and wait for the deploy to
+succeed. Then remove that variable and wait for the follow-up deploy. The app does not log
+the value. On plans with Shell access, `python scripts/reset_superadmin_password.py`
+provides an interactive alternative with hidden password input.
 
 ## Deploying to Render (Free Internet Hosting)
 1. Create account at https://render.com

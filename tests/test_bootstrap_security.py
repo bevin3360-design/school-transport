@@ -31,6 +31,20 @@ class SuperAdminBootstrapTests(unittest.TestCase):
                 admin = SuperAdmin.query.filter_by(username='superadmin').one()
                 self.assertTrue(admin.check_password('test-only-password-123'))
 
+    def test_rotates_existing_super_admin_from_environment_without_logging_password(self):
+        with app.app_context():
+            admin = SuperAdmin(username='superadmin')
+            admin.set_password('old-password-for-test')
+            db.session.add(admin)
+            db.session.commit()
+
+        with patch.dict(os.environ, {'SUPERADMIN_RESET_PASSWORD': 'new-test-password-456'}):
+            with app.app_context():
+                init_db()
+                admin = SuperAdmin.query.filter_by(username='superadmin').one()
+                self.assertTrue(admin.check_password('new-test-password-456'))
+                self.assertFalse(admin.check_password('old-password-for-test'))
+
 
 if __name__ == '__main__':
     unittest.main()

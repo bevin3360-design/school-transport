@@ -1761,6 +1761,19 @@ def init_db():
                     'No super-admin account exists. Set SUPERADMIN_INITIAL_PASSWORD '
                     'to create one.'
                 )
+        reset_password = os.environ.get('SUPERADMIN_RESET_PASSWORD')
+        if reset_password:
+            if not 12 <= len(reset_password) <= 128:
+                raise RuntimeError(
+                    'SUPERADMIN_RESET_PASSWORD must be between 12 and 128 characters.'
+                )
+            username = os.environ.get('SUPERADMIN_USERNAME', 'superadmin')
+            admin = SuperAdmin.query.filter_by(username=username).first()
+            if not admin:
+                raise RuntimeError('SUPERADMIN_RESET_PASSWORD target account was not found.')
+            admin.set_password(reset_password)
+            db.session.commit()
+            print('Super-admin password rotated from deployment configuration.')
         if not PlatformSettings.query.first():
             db.session.add(PlatformSettings())
             db.session.commit()
