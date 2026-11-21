@@ -1,6 +1,8 @@
 import getpass
-from importlib import import_module
 import os
+import sys
+from importlib import import_module
+from pathlib import Path
 
 
 MIN_PASSWORD_LENGTH = 12
@@ -9,6 +11,7 @@ MAX_PASSWORD_LENGTH = 128
 
 def main():
     os.environ['STS_SKIP_DB_INIT'] = '1'
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     application = import_module('app')
 
     username = input('Super-admin username: ').strip()
