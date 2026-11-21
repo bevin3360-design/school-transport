@@ -58,6 +58,16 @@ Web sign-in uses signed Flask sessions; OTP delivery, mobile refresh-token flows
 delivery, private document storage, and a live routing provider must be configured
 separately before relying on those services in production.
 
+## Super-admin security
+Production deployments must set a strong `SECRET_KEY`. PostgreSQL deployments fail to
+start if it is missing; local SQLite development uses a process-random key.
+
+No default super-admin password is created or logged. To bootstrap a new database, set
+`SUPERADMIN_INITIAL_PASSWORD` (at least 12 characters) before startup, then remove it.
+To rotate an existing account, open the Render service shell in the `sts-platform`
+service root and run `python scripts/reset_superadmin_password.py`. The script hides
+password input and does not print or store the new password.
+
 ## Deploying to Render (Free Internet Hosting)
 1. Create account at https://render.com
 2. Push this folder to a GitHub repo

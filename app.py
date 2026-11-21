@@ -14,10 +14,16 @@ import os, re, json
 from extensions import db
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'STS-PLATFORM-2026-SUPERKEY')
 
 # ── DATABASE: PostgreSQL in production, SQLite locally ──
 DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+secret_key = os.environ.get('SECRET_KEY')
+if not secret_key:
+    if DATABASE_URL.startswith(('postgres://', 'postgresql://', 'postgresql+psycopg://')):
+        raise RuntimeError('SECRET_KEY must be configured for PostgreSQL deployments.')
+    secret_key = os.urandom(32)
+app.config['SECRET_KEY'] = secret_key
+
 if DATABASE_URL:
     # Render gives postgres:// but SQLAlchemy needs postgresql://
     if DATABASE_URL.startswith('postgres://'):
@@ -1739,11 +1745,22 @@ def init_db():
     with app.app_context():
         db.create_all()
         if not SuperAdmin.query.first():
-            sa = SuperAdmin(username='superadmin')
-            sa.set_password('STS@2026#Owner')
-            db.session.add(sa)
-            db.session.commit()
-            print('Super admin created: superadmin / STS@2026#Owner')
+            initial_password = os.environ.get('SUPERADMIN_INITIAL_PASSWORD')
+            if initial_password:
+                if not 12 <= len(initial_password) <= 128:
+                    raise RuntimeError(
+                        'SUPERADMIN_INITIAL_PASSWORD must be between 12 and 128 characters.'
+                    )
+                sa = SuperAdmin(username=os.environ.get('SUPERADMIN_USERNAME', 'superadmin'))
+                sa.set_password(initial_password)
+                db.session.add(sa)
+                db.session.commit()
+                print('Initial super-admin account created.')
+            else:
+                print(
+                    'No super-admin account exists. Set SUPERADMIN_INITIAL_PASSWORD '
+                    'to create one.'
+                )
         if not PlatformSettings.query.first():
             db.session.add(PlatformSettings())
             db.session.commit()
