@@ -292,6 +292,7 @@
         <input type="password" id="t-pass" placeholder="Your passcode"/></div>
       <button class="btn-primary full" onclick="teacherLogin()">Sign In</button>
       <p id="t-err" class="error-msg hidden"></p>
+      <p class="forgot-link"><a href="#" onclick="openForgot('teacher');return false;">Forgot passcode?</a></p>
     </div>
 
     <!-- DRIVER -->
@@ -304,6 +305,7 @@
         <input type="password" id="d-pass" placeholder="Your password"/></div>
       <button class="btn-primary full" onclick="driverLogin()">Sign In</button>
       <p id="d-err" class="error-msg hidden"></p>
+      <p class="forgot-link"><a href="#" onclick="openForgot('driver');return false;">Forgot password?</a></p>
     </div>
 
     <!-- PARENT -->
@@ -316,6 +318,7 @@
         <input type="password" id="p-pass" placeholder="Your password"/></div>
       <button class="btn-primary full" onclick="parentLogin()">Sign In</button>
       <p id="p-err" class="error-msg hidden"></p>
+      <p class="forgot-link"><a href="#" onclick="openForgot('parent');return false;">Forgot password?</a></p>
       <hr style="margin:1rem 0;border:none;border-top:1px solid var(--grey)"/>
       <p style="text-align:center;font-size:.85rem;color:var(--muted);">
         New parent? 
@@ -358,6 +361,7 @@
         <input type="password" id="a-pass" placeholder="Password"/></div>
       <button class="btn-primary full" onclick="adminLogin()">Sign In</button>
       <p id="a-err" class="error-msg hidden"></p>
+      <p class="forgot-link"><a href="#" onclick="openForgot('admin');return false;">Forgot password?</a></p>
       <p style="text-align:center;margin-top:1rem;font-size:.85rem;">
         New school? <a href="/register" style="color:var(--sky);font-weight:600;">Register here →</a>
       </p>
@@ -374,6 +378,9 @@
           placeholder="6-digit code or recovery code"/></div>
       <button class="btn-primary full" onclick="superLogin()">Sign In</button>
       <p id="s-err" class="error-msg hidden"></p>
+      <p style="text-align:center;margin-top:.8rem;font-size:.78rem;color:var(--muted);">
+        Super admin password is reset by the platform operator.
+      </p>
     </div>
 
     <div style="text-align:center;margin-top:1.5rem;font-size:.78rem;color:var(--muted);">
@@ -583,5 +590,6 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/static/sw.js').catch(()=>{});
 }
 </script>
+<script src="/static/js/forgot.js"></script>
 </body>
 </html>

@@ -12,7 +12,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, date, timedelta, timezone
 from functools import wraps
 import math
-import os, re, json, secrets, threading, time
+import os, re, hmac, json, secrets, threading, time
 import pyotp
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -327,6 +327,16 @@ class PlatformSettings(db.Model):
     platform_name= db.Column(db.String(200), default='School Transport System')
     trial_days   = db.Column(db.Integer,     default=30)
     updated_at   = db.Column(db.DateTime,    default=datetime.utcnow)
+
+class PasswordResetRequest(db.Model):
+    id          = db.Column(db.Integer, primary_key=True)
+    role        = db.Column(db.String(20), nullable=False)
+    identifier  = db.Column(db.String(120), nullable=False)
+    school_id   = db.Column(db.Integer, nullable=True)
+    status      = db.Column(db.String(20), default='pending')
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    resolved_at = db.Column(db.DateTime, nullable=True)
+    resolved_by = db.Column(db.String(200), nullable=True)
 
 # �"��"� GPS TRACKING MODELS �"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"��"�
 class Driver(db.Model):
@@ -723,9 +733,10 @@ def teacher_login():
     if not school or school.status == 'suspended':
         record_login_failure('teacher', attempt_key)
         return jsonify({'success': False, 'message': 'School not found or suspended'}), 401
-    teacher = Teacher.query.filter_by(
+    teachers = Teacher.query.filter_by(
         school_id=school.id, teaching_code=code,
-        passcode=passcode, authorised=True, active=True).first()
+        authorised=True, active=True).all()
+    teacher = next((t for t in teachers if teacher_passcode_matches(t, passcode)), None)
     if teacher:
         clear_login_failures('teacher', attempt_key)
         session['teacher_id'] = teacher.id
@@ -740,6 +751,251 @@ def teacher_login():
 @app.route('/api/logout', methods=['POST'])
 def logout():
     session.clear()
+    return jsonify({'success': True})
+
+# ════════════════════════════════════════
+# ACCOUNT & PASSWORD RECOVERY
+# ════════════════════════════════════════
+HASH_PREFIXES = ('scrypt:', 'pbkdf2:')
+FORGOT_ATTEMPT_WINDOW = 15 * 60
+FORGOT_ATTEMPT_LIMIT = 5
+_forgot_attempts = {}
+_forgot_attempts_lock = threading.Lock()
+
+def teacher_passcode_matches(teacher, passcode):
+    stored = teacher.passcode or ''
+    if stored.startswith(HASH_PREFIXES):
+        return check_password_hash(stored, passcode)
+    return hmac.compare_digest(stored, passcode or '')
+
+def account_user():
+    for key, model, role in (
+        ('super_id', SuperAdmin, 'super'),
+        ('school_admin_id', SchoolAdmin, 'admin'),
+        ('teacher_id', Teacher, 'teacher'),
+        ('driver_id', Driver, 'driver'),
+        ('parent_id', Parent, 'parent'),
+    ):
+        uid = session.get(key)
+        if uid:
+            user = db.session.get(model, uid)
+            return (role, user) if user else (None, None)
+    return (None, None)
+
+def account_name(role, user):
+    return {
+        'super': lambda u: u.username,
+        'admin': lambda u: u.username,
+        'teacher': lambda u: u.teaching_code,
+        'driver': lambda u: u.phone,
+        'parent': lambda u: u.phone,
+    }[role](user)
+
+def account_school_id(role, user):
+    return None if role == 'super' else getattr(user, 'school_id', None)
+
+def account_check_password(role, user, password):
+    if role == 'teacher':
+        return teacher_passcode_matches(user, sanitize(password))
+    return user.check_password(password)
+
+def account_set_password(role, user, password):
+    if role == 'teacher':
+        user.passcode = generate_password_hash(sanitize(password))
+    else:
+        user.set_password(password)
+
+def forgot_blocked(ip):
+    now = time.monotonic()
+    with _forgot_attempts_lock:
+        stamps = [t for t in _forgot_attempts.get(ip, []) if t > now - FORGOT_ATTEMPT_WINDOW]
+        _forgot_attempts[ip] = stamps
+    return len(stamps) >= FORGOT_ATTEMPT_LIMIT
+
+def forgot_record(ip):
+    now = time.monotonic()
+    with _forgot_attempts_lock:
+        _forgot_attempts.setdefault(ip, []).append(now)
+
+FORGOT_REPLY = ('If those details match a record, your school admin has been '
+                'notified. They will reset it for you.')
+
+@app.route('/api/account/change-password', methods=['POST'])
+def change_password():
+    role, user = account_user()
+    if not role:
+        return jsonify({'success': False, 'message': 'Not signed in'}), 401
+    data = request.get_json(silent=True) or {}
+    current = data.get('current_password', '')
+    new = data.get('new_password', '')
+    if not account_check_password(role, user, current):
+        return jsonify({'success': False,
+                        'message': 'Current password is incorrect'}), 400
+    name = account_name(role, user)
+    problem = password_error(new, name)
+    if problem:
+        return jsonify({'success': False, 'message': problem}), 400
+    if new == current:
+        return jsonify({'success': False,
+                        'message': 'Choose a password different from the current one'}), 400
+    account_set_password(role, user, new)
+    db.session.commit()
+    log_action(account_school_id(role, user), role, name, 'Password changed')
+    return jsonify({'success': True,
+                    'message': 'Password updated. Use it the next time you sign in.'})
+
+def find_forgot_target(role, identifier, school):
+    if role == 'teacher':
+        return next((t for t in Teacher.query.filter_by(
+            school_id=school.id, teaching_code=identifier,
+            authorised=True, active=True).all()), None)
+    if role == 'driver':
+        return Driver.query.filter_by(
+            school_id=school.id, phone=identifier, active=True).first()
+    if role == 'parent':
+        return Parent.query.filter_by(school_id=school.id, phone=identifier).first()
+    return None
+
+@app.route('/api/account/forgot-password', methods=['POST'])
+def forgot_password():
+    ip = request.remote_addr or 'unknown'
+    if forgot_blocked(ip):
+        return jsonify({'success': False,
+                        'message': 'Too many requests. Try again in 15 minutes.'}), 429
+    data = request.get_json(silent=True) or {}
+    role = sanitize(data.get('role', ''))
+    identifier = sanitize(data.get('identifier', ''))
+    school_code = sanitize(data.get('school_code', ''))
+    forgot_record(ip)
+    if role not in ('admin', 'teacher', 'driver', 'parent') or not identifier:
+        return jsonify({'success': True, 'message': FORGOT_REPLY})
+    if role == 'admin':
+        target = SchoolAdmin.query.filter_by(username=identifier).first()
+        school_id = target.school_id if target else None
+    else:
+        school = School.query.filter_by(code=school_code).first() if school_code else None
+        if not school:
+            return jsonify({'success': True, 'message': FORGOT_REPLY})
+        target = find_forgot_target(role, identifier, school)
+        school_id = school.id
+    if not target:
+        return jsonify({'success': True, 'message': FORGOT_REPLY})
+    existing = PasswordResetRequest.query.filter_by(
+        role=role, identifier=identifier, school_id=school_id,
+        status='pending').first()
+    if not existing:
+        db.session.add(PasswordResetRequest(
+            role=role, identifier=identifier, school_id=school_id))
+        db.session.commit()
+        log_action(school_id, role, identifier, 'Password reset requested')
+    return jsonify({'success': True, 'message': FORGOT_REPLY})
+
+def request_payload(item, with_school=False):
+    payload = {
+        'id': item.id,
+        'role': item.role,
+        'identifier': item.identifier,
+        'created_at': item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '',
+    }
+    if with_school:
+        school = School.query.get(item.school_id) if item.school_id else None
+        payload['school'] = school.name if school else ''
+    return payload
+
+def resolve_request(item, new_password, resolved_by):
+    problem = password_error(new_password, item.identifier)
+    if problem:
+        return problem
+    if item.role == 'teacher':
+        user = next((t for t in Teacher.query.filter_by(
+            school_id=item.school_id, teaching_code=item.identifier).all()), None)
+    elif item.role == 'driver':
+        user = Driver.query.filter_by(
+            school_id=item.school_id, phone=item.identifier).first()
+    elif item.role == 'parent':
+        user = Parent.query.filter_by(
+            school_id=item.school_id, phone=item.identifier).first()
+    elif item.role == 'admin':
+        user = SchoolAdmin.query.filter_by(
+            username=item.identifier, school_id=item.school_id).first()
+    else:
+        user = None
+    if not user:
+        return 'Account no longer exists'
+    account_set_password(item.role, user, new_password)
+    item.status = 'used'
+    item.resolved_at = datetime.utcnow()
+    item.resolved_by = resolved_by
+    db.session.commit()
+    log_action(item.school_id, item.role, item.identifier,
+               'Password reset by ' + resolved_by)
+    return None
+
+def close_request(item, status, resolved_by):
+    item.status = status
+    item.resolved_at = datetime.utcnow()
+    item.resolved_by = resolved_by
+    db.session.commit()
+
+@app.route('/api/admin/password-requests')
+def admin_password_requests():
+    if not session.get('school_admin_id'):
+        return jsonify({'success': False, 'message': 'Not signed in'}), 401
+    items = PasswordResetRequest.query.filter(
+        PasswordResetRequest.school_id == session.get('school_id'),
+        PasswordResetRequest.status == 'pending',
+        PasswordResetRequest.role.in_(('teacher', 'driver', 'parent')),
+    ).order_by(PasswordResetRequest.created_at).limit(100).all()
+    return jsonify({'success': True,
+                    'requests': [request_payload(i) for i in items]})
+
+@app.route('/api/admin/password-requests/<int:rid>/<action>', methods=['POST'])
+def admin_resolve_password_request(rid, action):
+    if not session.get('school_admin_id'):
+        return jsonify({'success': False, 'message': 'Not signed in'}), 401
+    if action not in ('reset', 'reject'):
+        return jsonify({'success': False, 'message': 'Unknown action'}), 404
+    item = PasswordResetRequest.query.get(rid)
+    if (not item or item.status != 'pending'
+            or item.school_id != session.get('school_id')
+            or item.role not in ('teacher', 'driver', 'parent')):
+        return jsonify({'success': False, 'message': 'Request not found'}), 404
+    by = f'School admin #{session["school_admin_id"]}'
+    if action == 'reject':
+        close_request(item, 'rejected', by)
+        return jsonify({'success': True})
+    data = request.get_json(silent=True) or {}
+    problem = resolve_request(item, data.get('new_password', ''), by)
+    if problem:
+        return jsonify({'success': False, 'message': problem}), 400
+    return jsonify({'success': True})
+
+@app.route('/api/super/password-requests')
+def super_password_requests():
+    if not session.get('super_id'):
+        return jsonify({'success': False, 'message': 'Not signed in'}), 401
+    items = PasswordResetRequest.query.filter_by(
+        status='pending', role='admin').order_by(
+        PasswordResetRequest.created_at).limit(100).all()
+    return jsonify({'success': True,
+                    'requests': [request_payload(i, with_school=True) for i in items]})
+
+@app.route('/api/super/password-requests/<int:rid>/<action>', methods=['POST'])
+def super_resolve_password_request(rid, action):
+    if not session.get('super_id'):
+        return jsonify({'success': False, 'message': 'Not signed in'}), 401
+    if action not in ('reset', 'reject'):
+        return jsonify({'success': False, 'message': 'Unknown action'}), 404
+    item = PasswordResetRequest.query.get(rid)
+    if not item or item.status != 'pending' or item.role != 'admin':
+        return jsonify({'success': False, 'message': 'Request not found'}), 404
+    if action == 'reject':
+        close_request(item, 'rejected', 'Super admin')
+        return jsonify({'success': True})
+    data = request.get_json(silent=True) or {}
+    problem = resolve_request(item, data.get('new_password', ''), 'Super admin')
+    if problem:
+        return jsonify({'success': False, 'message': problem}), 400
     return jsonify({'success': True})
 
 @app.route('/api/session')

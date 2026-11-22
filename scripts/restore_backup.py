@@ -14,6 +14,7 @@ import argparse
 import getpass
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,30 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from backup_production import BackupError, find_tool, scrub
+
+
+def filtered_toc(pg_restore, archive, patterns):
+    """Return a TOC list file with the requested tables' data commented out."""
+    listing = subprocess.run([pg_restore, "--list", str(archive)],
+                             capture_output=True, text=True)
+    if listing.returncode != 0:
+        raise BackupError("archive is not readable: " + listing.stderr.strip())
+    kept, skipped = [], 0
+    for line in listing.stdout.splitlines():
+        match = re.search(r"\bTABLE DATA\s+(\S+)\s+(\S+)", line)
+        if match and not line.lstrip().startswith(";"):
+            schema, table = match.group(1), match.group(2)
+            if any(p in (f"{schema}.{table}", table) for p in patterns):
+                kept.append(";" + line)
+                skipped += 1
+                continue
+        kept.append(line)
+    if not skipped:
+        return None
+    fd, path = tempfile.mkstemp(suffix=".toc")
+    os.close(fd)
+    Path(path).write_text("\n".join(kept) + "\n", encoding="utf-8")
+    return path
 
 
 def verify_sidecar(archive):
@@ -67,6 +92,10 @@ def main(argv=None):
     parser.add_argument("--pg-bin", help="directory holding pg_restore/psql")
     parser.add_argument("--force", action="store_true",
                         help="restore even if the target already has tables")
+    parser.add_argument("--exclude-table-data", action="append", default=[],
+                        metavar="PATTERN",
+                        help="skip data for matching tables (repeatable; e.g. an "
+                             "extension reference table owned by a superuser)")
     args = parser.parse_args(argv)
 
     archive = Path(args.backup).expanduser()
@@ -79,6 +108,10 @@ def main(argv=None):
     parsed = urlparse(raw)
     env = dict(os.environ)
     env["PGPASSWORD"] = unquote(parsed.password or "")
+    env["PGHOST"] = parsed.hostname or ""
+    env["PGPORT"] = str(parsed.port or 5432)
+    env["PGUSER"] = unquote(parsed.username or "")
+    env["PGDATABASE"] = unquote(parsed.path.lstrip("/"))
     env["PGCONNECT_TIMEOUT"] = env.get("PGCONNECT_TIMEOUT", "20")
     env.setdefault("PGSSLMODE", "require")
     secrets = [unquote(parsed.password or "")]
@@ -116,13 +149,20 @@ def main(argv=None):
         if toc.returncode != 0:
             raise BackupError("archive is not readable: "
                               + scrub(toc.stderr.strip(), secrets))
-        result = subprocess.run(
-            [pg_restore, "--no-owner", "--no-privileges", "--exit-on-error",
-             "--single-transaction",
-             "--host", parsed.hostname or "", "--port", str(parsed.port or 5432),
-             "--username", unquote(parsed.username or ""),
-             "--dbname", unquote(parsed.path.lstrip("/") or ""), str(tmp)],
-            env=env, capture_output=True, text=True)
+        toc_list = filtered_toc(pg_restore, tmp, args.exclude_table_data) \
+            if args.exclude_table_data else None
+        try:
+            result = subprocess.run(
+                [pg_restore, "--no-owner", "--no-privileges", "--exit-on-error",
+                 "--single-transaction"]
+                + (["--use-list", toc_list] if toc_list else [])
+                + ["--host", parsed.hostname or "", "--port", str(parsed.port or 5432),
+                   "--username", unquote(parsed.username or ""),
+                   "--dbname", unquote(parsed.path.lstrip("/") or ""), str(tmp)],
+                env=env, capture_output=True, text=True)
+        finally:
+            if toc_list:
+                Path(toc_list).unlink(missing_ok=True)
         if result.returncode != 0:
             raise BackupError("restore failed: "
                               + scrub(result.stderr.strip(), secrets))

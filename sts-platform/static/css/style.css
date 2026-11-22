@@ -77,6 +77,8 @@ a:hover{text-decoration:underline;}
 .tab-btn:focus-visible,.nav-item:focus-visible{outline:none;box-shadow:var(--ring);}
 .error-msg{color:var(--red);font-size:.85rem;margin-top:.5rem;}
 .success-msg{color:var(--success);font-size:.85rem;margin-top:.5rem;}
+.forgot-link{text-align:center;margin-top:.6rem;font-size:.85rem;}
+.forgot-link a{color:var(--sky);font-weight:600;}
 .hidden{display:none!important;}
 .badge-red,.badge-green,.badge-warn,.badge-grey,.badge-sky{border-radius:999px;font-size:.72rem;font-weight:700;
   letter-spacing:.02em;padding:.22rem .6rem;display:inline-block;}
