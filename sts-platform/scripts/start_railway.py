@@ -10,12 +10,43 @@ POSTGRES_PREFIXES = (
     'postgresql://',
     'postgresql+psycopg://',
 )
+DATA_URL_FILES = tuple(
+    Path(value)
+    for value in (
+        os.environ.get('DATABASE_URL_FILE'),
+        '/etc/secrets/database_url.txt',
+        BASE_DIR / 'database_url.txt',
+    )
+    if value
+)
+
+
+def usable_url(url):
+    return url.startswith(POSTGRES_PREFIXES) and '@' in url
+
+
+def resolve_database_url():
+    # Dashboard env editors have mangled this URL twice, so allow a mounted
+    # secret file to take over when the env value is not a complete URL.
+    url = os.environ.get('DATABASE_URL', '').strip()
+    if usable_url(url):
+        return url
+    for path in DATA_URL_FILES:
+        try:
+            candidate = path.read_text(encoding='utf-8').strip()
+        except OSError:
+            continue
+        if usable_url(candidate):
+            print(f'Using the database URL from {path}.', flush=True)
+            return candidate
+    return url
 
 
 def main():
     os.chdir(BASE_DIR)
 
-    database_url = os.environ.get('DATABASE_URL', '').strip()
+    database_url = resolve_database_url()
+    os.environ['DATABASE_URL'] = database_url
     scheme = database_url.split('://', 1)[0] if '://' in database_url else '(none)'
     print(
         f'DATABASE_URL fingerprint: scheme={scheme} length={len(database_url)} '
