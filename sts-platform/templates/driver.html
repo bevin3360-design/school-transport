@@ -29,7 +29,7 @@
       <button id="btn-start-tracking" class="btn-primary" onclick="startTracking()" style="display:none;">
         🚀 Start Tracking
       </button>
-      <button id="btn-stop-tracking" class="btn-danger" onclick="stopTracking()" style="display:none;">
+      <button id="btn-stop-tracking" class="btn-danger btn-sm" onclick="stopTracking()" style="display:none;">
         ⏹️ Stop Tracking
       </button>
     </div>
@@ -151,7 +151,7 @@ async function loadRouteInfo() {
     html += `<p style="margin:0.3rem 0;font-size:0.9rem;"><strong>Parents:</strong> ${data.parent_count}</p>`;
     html += '</div>';
 
-    html += '<button class="btn-primary full" onclick="startTracking()">🚀 Start Route Tracking</button>';
+    html += '<button id="route-start-btn" class="btn-primary full" onclick="startTracking()">🚀 Start Route Tracking</button>';
 
     document.getElementById('route-info').innerHTML = html;
 
@@ -531,15 +531,18 @@ function updateTrackingUI() {
   const status = document.getElementById('tracking-status');
   const btnStart = document.getElementById('btn-start-tracking');
   const btnStop = document.getElementById('btn-stop-tracking');
+  const routeStart = document.getElementById('route-start-btn');
 
   if (isTracking) {
     status.innerHTML = '● <span style="color:var(--success);">Tracking Active</span>';
     btnStart.style.display = 'none';
     btnStop.style.display = 'inline-block';
+    if (routeStart) routeStart.style.display = 'none';
   } else {
     status.innerHTML = '● <span style="color:var(--muted);">Offline</span>';
     btnStart.style.display = 'inline-block';
     btnStop.style.display = 'none';
+    if (routeStart) routeStart.style.display = '';
   }
 }
 

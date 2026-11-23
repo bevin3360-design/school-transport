@@ -92,10 +92,11 @@ a:hover{text-decoration:underline;}
 .topnav{position:fixed;top:0;left:0;right:0;height:58px;background:var(--black);
   border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between;
   padding:0 1.5rem;z-index:1000;box-shadow:0 1px 2px rgba(16,24,40,.2);}
-.nav-left{display:flex;align-items:center;gap:.7rem;}
+.nav-left{display:flex;align-items:center;gap:.7rem;min-width:0;}
 .nav-logo{font-size:1.5rem;line-height:1;}
-.nav-title{color:var(--white);font-weight:650;font-size:.98rem;letter-spacing:.01em;}
-.nav-right{display:flex;align-items:center;gap:.8rem;}
+.nav-title{color:var(--white);font-weight:650;font-size:.98rem;letter-spacing:.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.nav-right{display:flex;align-items:center;gap:.8rem;flex-shrink:0;}
 .nav-user{color:#C9D6E3;font-size:.88rem;}
 .nav-right>span:not(.badge-role){color:#C9D6E3;font-size:.88rem;}
 .badge-role{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.16);color:#DCE7F2;
@@ -229,7 +230,8 @@ a:hover{text-decoration:underline;}
 @media(max-width:768px){
   .sidebar{width:60px;padding:.6rem .35rem;}.nav-item{padding:.7rem 0;text-align:center;font-size:1rem;}
   .main-content{padding:1rem;}.teacher-layout{grid-template-columns:1fr;padding:1rem;}
-  .topnav{padding:0 1rem;}.nav-title{font-size:.85rem;}
+  .topnav{padding:0 1rem;}.nav-title{display:none;}
+  .nav-user{max-width:40vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 }
 @media(max-width:480px){
   .dash-layout{flex-direction:column;}

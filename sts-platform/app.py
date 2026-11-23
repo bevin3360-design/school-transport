@@ -138,6 +138,15 @@ def gps_location_payload(driver, enabled=True):
         )
     return payload
 
+def iso_utc(value):
+    """Naive timestamps in the DB are UTC; mark them so browsers show local time."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.isoformat() + 'Z'
+    return value.astimezone(timezone.utc).isoformat()
+
+
 csrf = CSRFProtect(app)
 # Tests opt out through the environment; production keeps protection on.
 app.config['WTF_CSRF_ENABLED'] = os.environ.get('STS_DISABLE_CSRF') != '1'
@@ -542,7 +551,7 @@ def is_super(): return session.get('super_id') is not None
 def is_school_admin(): return session.get('school_admin_id') is not None
 def current_school_id(): return session.get('school_id')
 
-SUBSCRIPTION_OPEN_PATHS = ('/', '/api/session', '/api/logout',
+SUBSCRIPTION_OPEN_PATHS = ('/', '/login', '/api/session', '/api/logout',
                            '/api/admin/login', '/api/super/login',
                            '/api/teacher/login', '/api/driver/login',
                            '/api/parent/login')
@@ -567,7 +576,7 @@ def enforce_subscription_window():
     if path.startswith('/api/'):
         return jsonify({'error': 'Subscription expired. Renew to continue.',
                         'code': 'subscription_expired'}), 402
-    return redirect('/payment' if is_school_admin() else '/')
+    return redirect('/payment' if is_school_admin() else '/login')
 
 def is_parent_session():
     role_keys = ('super_id', 'school_admin_id', 'teacher_id', 'driver_id', 'parent_id')
@@ -664,6 +673,15 @@ def save_roster(school_id, assignments, target_date):
 # ════════════════════════════════════════
 @app.route('/')
 def index():
+    if is_super(): return redirect('/super')
+    if is_school_admin(): return redirect('/admin')
+    if session.get('teacher_id'): return redirect('/teacher')
+    if session.get('driver_id'): return redirect('/driver')
+    if session.get('parent_id'): return redirect('/parent')
+    return render_template('landing.html')
+
+@app.route('/login')
+def login_page():
     return render_template('index.html')
 
 @app.route('/super')
@@ -1057,9 +1075,12 @@ def check_session():
                         'school': session.get('school_name'),
                         'school_id': session.get('school_id')})
     if session.get('parent_id'):
+        parent = Parent.query.get(session['parent_id'])
         return jsonify({'type': 'parent', 'name': session.get('parent_name'),
                         'school': session.get('school_name'),
-                        'school_id': session.get('school_id')})
+                        'school_id': session.get('school_id'),
+                        'child_name': parent.child_name if parent else None,
+                        'child_class': parent.child_class if parent else None})
     return jsonify({'type': None})
 
 # ����������������������������������������
@@ -1311,7 +1332,7 @@ def parent_track_bus():
         'route_type': 'Morning' if route.is_morning else 'Evening',
         'shift_active': shift_active,
         'freshness_enabled': app.config['GPS_FRESHNESS_ENABLED'],
-        'last_update': driver.last_location_update.isoformat() if driver and driver.last_location_update else None,
+        'last_update': iso_utc(driver.last_location_update) if driver else None,
         'driver': {
             'name': driver.name if driver else 'Not assigned',
             'phone': driver.phone if driver else None,
@@ -1598,7 +1619,7 @@ def admin_drivers():
         'is_tracking': d.is_tracking,
         'latitude': d.current_latitude,
         'longitude': d.current_longitude,
-        'last_location_update': d.last_location_update.isoformat() if d.last_location_update else None
+        'last_location_update': iso_utc(d.last_location_update)
     } for d in drivers])
 
 @app.route('/api/admin/drivers/<int:did>/location-history')
@@ -2633,7 +2654,7 @@ def super_tracking():
         'is_tracking': d.is_tracking,
         'latitude': d.current_latitude,
         'longitude': d.current_longitude,
-        'last_update': d.last_location_update.isoformat() if d.last_location_update else None
+        'last_update': iso_utc(d.last_location_update)
     } for d in drivers])
 
 

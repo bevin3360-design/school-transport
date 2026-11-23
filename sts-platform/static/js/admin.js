@@ -414,7 +414,7 @@ async function toggleParentPhone(id, verified) {
   }
 }
 
-function openAddParent() {
+async function openAddParent() {
   document.getElementById('p-modal-title').textContent = 'Add Parent';
   document.getElementById('p-id').value = '';
   document.getElementById('p-name').value = '';

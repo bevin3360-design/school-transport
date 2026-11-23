@@ -20,14 +20,14 @@ class CsrfProtectionTests(unittest.TestCase):
         app.config['WTF_CSRF_ENABLED'] = False
 
     def issue_token(self):
-        page = self.client.get('/')
+        page = self.client.get('/login')
         match = re.search(
             r'name="csrf-token" content="([^"]+)"', page.get_data(as_text=True))
         self.assertIsNotNone(match, 'token meta tag missing from the sign-in page')
         return match.group(1)
 
     def test_pages_expose_the_token_and_fetch_helper(self):
-        page = self.client.get('/')
+        page = self.client.get('/login')
         body = page.get_data(as_text=True)
         self.assertIn('name="csrf-token"', body)
         self.assertIn('/static/js/csrf.js', body)
