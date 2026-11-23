@@ -5,24 +5,27 @@ from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
+SECRET_DIR = Path('/etc/secrets')
 POSTGRES_PREFIXES = (
     'postgres://',
     'postgresql://',
     'postgresql+psycopg://',
 )
-DATA_URL_FILES = tuple(
-    Path(value)
-    for value in (
-        os.environ.get('DATABASE_URL_FILE'),
-        '/etc/secrets/database_url.txt',
-        BASE_DIR / 'database_url.txt',
-    )
-    if value
-)
 
 
 def usable_url(url):
     return url.startswith(POSTGRES_PREFIXES) and '@' in url
+
+
+def database_url_files():
+    override = os.environ.get('DATABASE_URL_FILE')
+    if override:
+        yield Path(override)
+    yield SECRET_DIR / 'database_url.txt'
+    yield BASE_DIR / 'database_url.txt'
+    yield BASE_DIR.parent / 'database_url.txt'
+    if SECRET_DIR.is_dir():
+        yield from sorted(SECRET_DIR.iterdir())
 
 
 def resolve_database_url():
@@ -31,14 +34,17 @@ def resolve_database_url():
     url = os.environ.get('DATABASE_URL', '').strip()
     if usable_url(url):
         return url
-    for path in DATA_URL_FILES:
+    for path in database_url_files():
         try:
             candidate = path.read_text(encoding='utf-8').strip()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             continue
         if usable_url(candidate):
             print(f'Using the database URL from {path}.', flush=True)
             return candidate
+    if SECRET_DIR.is_dir():
+        names = sorted(path.name for path in SECRET_DIR.iterdir())
+        print(f'No usable database URL found; {SECRET_DIR} holds: {names}', flush=True)
     return url
 
 
