@@ -1,0 +1,6 @@
+# Rendered by setup_vm.sh with the real host name.
+# Caddy obtains and renews the Let's Encrypt certificate automatically.
+__DOMAIN__ {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8000
+}

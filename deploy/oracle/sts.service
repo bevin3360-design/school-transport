@@ -1,0 +1,25 @@
+[Unit]
+Description=School Transport web app (Gunicorn via start_railway.py)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sts
+Group=sts
+WorkingDirectory=/opt/school-transport/sts-platform
+EnvironmentFile=/etc/sts/sts.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/school-transport/.venv/bin/python scripts/start_railway.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=-/opt/school-transport/sts-platform/instance
+
+[Install]
+WantedBy=multi-user.target

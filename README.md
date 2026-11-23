@@ -90,6 +90,12 @@ for the interactive alternative.
 6. Free instances sleep after inactivity and wake on the next request. Keeping the app
    always running requires a paid instance type; no start command can change that.
 
+### Oracle Cloud Always Free VM
+An always-on Ubuntu 24.04 VM (Ampere A1, 1 OCPU / 6 GB) running the same start script
+behind Caddy with automatic HTTPS. The VM is stateless; all data stays in the Neon
+database. Full console click-through, verification and cutover steps live in
+[`deploy/oracle/README.md`](deploy/oracle/README.md).
+
 ## Backups
 
 Take an encrypted copy of the live database and keep it off the machine that runs the app:
