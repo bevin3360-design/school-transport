@@ -13,10 +13,9 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.9"
       - key: DATABASE_URL
-        fromDatabase:
-          name: mytransport-db
-          property: connectionString
+        sync: false
 
+# Kept only as a rollback copy of the old database; the app now reads Neon.
 databases:
   - name: mytransport-db
     plan: free
