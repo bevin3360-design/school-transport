@@ -176,8 +176,11 @@ if DATABASE_URL:
     if is_postgres:
         # PostGIS may be installed in ride_hailing rather than public; keep both
         # on the search_path so ST_* functions and the geometry type resolve.
+        # Neon suspends idle computes and drops their sockets, so probe pooled
+        # connections before handing them to a request.
         app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-            'connect_args': {'options': '-csearch_path=public,ride_hailing'}
+            'connect_args': {'options': '-csearch_path=public,ride_hailing'},
+            'pool_pre_ping': True,
         }
 else:
     # No DATABASE_URL — use SQLite (works on Render free tier too)
