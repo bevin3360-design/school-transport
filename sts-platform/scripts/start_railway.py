@@ -16,6 +16,12 @@ def main():
     os.chdir(BASE_DIR)
 
     database_url = os.environ.get('DATABASE_URL', '').strip()
+    scheme = database_url.split('://', 1)[0] if '://' in database_url else '(none)'
+    print(
+        f'DATABASE_URL fingerprint: scheme={scheme} length={len(database_url)} '
+        f'has_credentials={"@" in database_url}',
+        flush=True,
+    )
     if database_url.startswith(POSTGRES_PREFIXES):
         print('PostgreSQL DATABASE_URL detected; applying ride-hailing schema.', flush=True)
         subprocess.run(
