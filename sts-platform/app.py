@@ -233,6 +233,14 @@ class School(db.Model):
             return today <= (self.subscription_end or today)
         return False
 
+    @property
+    def subscription_lapsed(self):
+        return self.status in ('trial', 'active') and not self.is_active()
+
+    @property
+    def effective_status(self):
+        return 'expired' if self.subscription_lapsed else self.status
+
     def days_remaining(self):
         today = date.today()
         if self.status == 'trial':
@@ -534,6 +542,33 @@ def is_super(): return session.get('super_id') is not None
 def is_school_admin(): return session.get('school_admin_id') is not None
 def current_school_id(): return session.get('school_id')
 
+SUBSCRIPTION_OPEN_PATHS = ('/', '/api/session', '/api/logout',
+                           '/api/admin/login', '/api/super/login',
+                           '/api/teacher/login', '/api/driver/login',
+                           '/api/parent/login')
+ADMIN_PAYMENT_PATHS = ('/payment',)
+
+@app.before_request
+def enforce_subscription_window():
+    """A lapsed trial/plan leaves the admin only the payment page; other roles are locked out."""
+    if request.method == 'OPTIONS' or is_super():
+        return None
+    if not session.get('school_id'):
+        return None
+    school = School.query.get(session['school_id'])
+    if not school or not school.subscription_lapsed:
+        return None
+    path = request.path
+    if path in SUBSCRIPTION_OPEN_PATHS or path.startswith('/static/'):
+        return None
+    if is_school_admin() and (
+            path in ADMIN_PAYMENT_PATHS or path.startswith('/api/payment/')):
+        return None
+    if path.startswith('/api/'):
+        return jsonify({'error': 'Subscription expired. Renew to continue.',
+                        'code': 'subscription_expired'}), 402
+    return redirect('/payment' if is_school_admin() else '/')
+
 def is_parent_session():
     role_keys = ('super_id', 'school_admin_id', 'teacher_id', 'driver_id', 'parent_id')
     return session.get('parent_id') is not None and all(
@@ -736,6 +771,9 @@ def teacher_login():
     if not school or school.status == 'suspended':
         record_login_failure('teacher', attempt_key)
         return jsonify({'success': False, 'message': 'School not found or suspended'}), 401
+    if school.subscription_lapsed:
+        return jsonify({'success': False,
+                        'message': 'School subscription has ended. Ask your school admin to renew.'}), 403
     teachers = Teacher.query.filter_by(
         school_id=school.id, teaching_code=code,
         authorised=True, active=True).all()
@@ -1041,6 +1079,9 @@ def driver_login():
     school = School.query.filter_by(code=school_code).first()
     if not school or school.status == 'suspended':
         return jsonify({'success': False, 'message': 'School not found or suspended'}), 401
+    if school.subscription_lapsed:
+        return jsonify({'success': False,
+                        'message': 'School subscription has ended. Ask your school admin to renew.'}), 403
     
     driver = Driver.query.filter_by(school_id=school.id, phone=phone, active=True).first()
     if driver and driver.check_password(password):
@@ -1069,6 +1110,9 @@ def parent_login():
     school = School.query.filter_by(code=school_code).first()
     if not school or school.status == 'suspended':
         return jsonify({'success': False, 'message': 'School not found or suspended'}), 401
+    if school.subscription_lapsed:
+        return jsonify({'success': False,
+                        'message': 'School subscription has ended. Ask your school admin to renew.'}), 403
     
     parent = Parent.query.filter_by(school_id=school.id, phone=phone, active=True).first()
     if parent and parent.check_password(password):
@@ -1977,7 +2021,7 @@ def payment_status():
                .order_by(Payment.submitted_at.desc()).all()
     school = School.query.get(current_school_id())
     return jsonify({
-        'school_status': school.status,
+        'school_status': school.effective_status,
         'days_remaining': school.days_remaining(),
         'plan': school.plan,
         'payments': [{
@@ -1996,7 +2040,7 @@ def super_schools():
     schools = School.query.order_by(School.created_at.desc()).all()
     return jsonify([{
         'id': s.id, 'name': s.name, 'code': s.code,
-        'plan': s.plan, 'status': s.status,
+        'plan': s.plan, 'status': s.effective_status,
         'days_remaining': s.days_remaining(),
         'trial_end': s.trial_end.isoformat() if s.trial_end else None,
         'subscription_end': s.subscription_end.isoformat() if s.subscription_end else None,
@@ -2168,10 +2212,10 @@ def super_stats():
     revenue = sum(p.amount for p in payments)
     return jsonify({
         'total_schools': len(schools),
-        'active': sum(1 for s in schools if s.status == 'active'),
-        'trial': sum(1 for s in schools if s.status == 'trial'),
-        'expired': sum(1 for s in schools if s.status == 'expired'),
-        'suspended': sum(1 for s in schools if s.status == 'suspended'),
+        'active': sum(1 for s in schools if s.effective_status == 'active'),
+        'trial': sum(1 for s in schools if s.effective_status == 'trial'),
+        'expired': sum(1 for s in schools if s.effective_status == 'expired'),
+        'suspended': sum(1 for s in schools if s.effective_status == 'suspended'),
         'total_revenue': revenue,
         'pending_payments': pending,
         'total_teachers': Teacher.query.count(),
