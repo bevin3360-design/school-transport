@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>My School Transport — pilot setup sheet</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  :root{
+    --brand:#14406B;--brand-dark:#0E3050;--sky:#2B6CB0;--gold:#F0C040;
+    --text:#1B2733;--muted:#5B6B7B;--line:#D8E0EA;--off:#F5F7FA;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif;
+    color:var(--text);font-size:10.5pt;line-height:1.45;background:#fff;
+    max-width:190mm;margin:0 auto;padding:6mm;
+  }
+  .print-btn{
+    display:block;margin:0 auto 6mm;padding:6px 14px;border:1px solid var(--line);
+    border-radius:6px;background:var(--off);cursor:pointer;font:inherit;color:var(--brand);
+  }
+  header{
+    display:flex;align-items:center;gap:10px;border-bottom:3px solid var(--brand);
+    padding-bottom:8px;margin-bottom:10px;
+  }
+  header img{width:42px;height:42px;border-radius:8px;}
+  header h1{font-size:17pt;color:var(--brand);line-height:1.15;}
+  header p{color:var(--muted);font-size:9pt;}
+  .for{margin-left:auto;text-align:right;font-size:9pt;color:var(--muted);}
+  .for strong{display:block;color:var(--text);font-size:10pt;}
+  h2{font-size:10.5pt;text-transform:uppercase;letter-spacing:.06em;color:var(--sky);
+     margin:12px 0 5px;}
+  ul,ol{margin-left:16px;}
+  li{margin-bottom:3px;}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .box{background:var(--off);border:1px solid var(--line);border-radius:6px;padding:8px 10px;}
+  table{width:100%;border-collapse:collapse;font-size:9.5pt;}
+  th,td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);}
+  th{background:var(--off);color:var(--muted);font-size:8.5pt;text-transform:uppercase;letter-spacing:.05em;}
+  .steps li{margin-bottom:5px;}
+  .steps strong{color:var(--brand);}
+  code{background:#EAF2FA;border:1px solid #CFE0F1;border-radius:4px;padding:0 4px;font-size:9pt;}
+  .pricing{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px;}
+  .price{border:1px solid var(--line);border-radius:6px;padding:7px 9px;text-align:center;}
+  .price strong{display:block;color:var(--brand);font-size:11pt;}
+  .price small{color:var(--muted);}
+  .price.mid{border:2px solid var(--brand);}
+  footer{
+    margin-top:12px;border-top:1px solid var(--line);padding-top:7px;
+    display:flex;justify-content:space-between;font-size:9pt;color:var(--muted);
+  }
+  footer a{color:var(--brand);text-decoration:none;font-weight:600;}
+  @media print{ .print-btn{display:none;} body{padding:0;} }
+</style>
+</head>
+<body>
+
+<button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
+
+<header>
+  <img src="../../sts-platform/static/icons/icon-192.png" alt=""/>
+  <div>
+    <h1>My School Transport</h1>
+    <p>Pilot setup sheet · live school-bus tracking</p>
+  </div>
+  <div class="for">Prepared for:<br/><strong>________________________</strong><br/>School code: __________</div>
+</header>
+
+<h2>What you get</h2>
+<div class="cols">
+  <ul>
+    <li><strong>Live bus map</strong> for the office — see every bus on one screen.</li>
+    <li><strong>Parents see the bus on their phone</strong> — no more “where is the bus?” calls.</li>
+  </ul>
+  <ul>
+    <li><strong>One-tap driver start</strong> — drivers see only their route and children.</li>
+    <li><strong>Works on any phone</strong> — no app store, add it to the home screen.</li>
+  </ul>
+</div>
+
+<h2>Have this ready</h2>
+<div class="box">
+  School name &amp; a short code (e.g. <code>GFA001</code>) · route names for morning and
+  evening · each driver’s name and phone · 3–5 parents with their phone, child’s name,
+  class and route.
+</div>
+
+<h2>Setup — about 10 minutes</h2>
+<ol class="steps">
+  <li><strong>Register</strong> the school at <code>mytransport.onrender.com/register</code>
+      — choose an admin username and password (8+ characters, letters and numbers).</li>
+  <li><strong>Sign in</strong> as admin at <code>mytransport.onrender.com/login</code>.</li>
+  <li><strong>Add routes</strong> (morning / evening), then <strong>add each driver</strong>
+      with name, phone, password and route.</li>
+  <li><strong>Add parents</strong> with their phone, child name, class and route.</li>
+  <li><strong>Day-1 dry run:</strong> driver opens the site, taps <strong>Start Tracking</strong>,
+      allows location, and the bus appears on the map.</li>
+</ol>
+
+<h2>Who signs in with what</h2>
+<table>
+  <tr><th>Role</th><th>Sign-in details</th><th>What they see</th></tr>
+  <tr><td>Admin</td><td>username + password</td><td>routes, drivers, live map, roster</td></tr>
+  <tr><td>Teacher</td><td>teaching code + passcode + school code</td><td>class roster, register parents</td></tr>
+  <tr><td>Driver</td><td>phone + password + school code</td><td>own route, children, Start/Stop</td></tr>
+  <tr><td>Parent</td><td>phone + password + school code</td><td>their child’s bus + stop alerts</td></tr>
+</table>
+
+<h2>Free trial &amp; pricing</h2>
+<p style="font-size:9.5pt;">
+  30 days free from registration — no card, no contract. After that, pay monthly by M-Pesa
+  (the M-Pesa number is shown on the payment page when the trial ends).
+</p>
+<div class="pricing">
+  <div class="price"><small>Basic</small><strong>KES 500</strong><small>4 routes · 10 teachers</small></div>
+  <div class="price mid"><small>Standard</small><strong>KES 1,500</strong><small>8 routes · 20 teachers</small></div>
+  <div class="price"><small>Premium</small><strong>KES 3,000</strong><small>unlimited routes</small></div>
+</div>
+
+<div class="box" style="margin-top:8px;font-size:9pt;">
+  <strong>Driver tips:</strong> keep the site open with the screen on during the run, phone
+  charged and location allowed. Alerts between drivers and parents are in-app only.
+</div>
+
+<footer>
+  <span>Help on WhatsApp: <a href="https://wa.me/254753538323">+254 753 538 323</a></span>
+  <span><a href="https://mytransport.onrender.com">mytransport.onrender.com</a></span>
+</footer>
+
+</body>
+</html>
