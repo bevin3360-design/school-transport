@@ -176,7 +176,7 @@ async function saveRoute(){
   if(!name){alert('Route name required.');return;}
   let r;
   if(id)r=await fetch('/api/routes/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description,is_morning,active})});
-  else r=await fetch('/api/routes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description,is_morning})});
+  else r=await fetch('/api/routes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description,is_morning,active})});
   const d=await r.json();
   if(d.success||d.id){closeModal('route-modal');loadRoutes();}
   else{alert('Error saving route: '+(d.error||'Unknown error. Check your subscription status.'));}
@@ -319,7 +319,9 @@ async function saveDriver() {
     return;
   }
   
-  const data = { name, phone, license, active, assigned_route_id: route_id };
+  const data = { name, phone, license, active };
+  if (id) data.assigned_route_id = route_id;
+  else data.route_id = route_id;
   if (password) data.password = password;
   
   try {
@@ -475,7 +477,9 @@ async function saveParent() {
     return;
   }
   
-  const data = { name, phone, child_name, child_class, active, assigned_route_id: route_id };
+  const data = { name, phone, child_name, child_class, active };
+  if (id) data.assigned_route_id = route_id;
+  else data.route_id = route_id;
   if (password) data.password = password;
   
   try {
@@ -527,9 +531,11 @@ async function populateRouteDropdown(selectId, selectedId) {
   select.innerHTML = '<option value="">-- Select Route --</option>';
   routes.forEach(route => {
     const opt = document.createElement('option');
+    const isCurrent = selectedId && route.id == selectedId;
     opt.value = route.id;
-    opt.textContent = `${route.name} (${route.is_morning ? 'Morning' : 'Evening'})`;
-    if (selectedId && route.id == selectedId) opt.selected = true;
+    opt.textContent = `${route.name} (${route.is_morning ? 'Morning' : 'Evening'})${route.active ? '' : ' — Inactive'}`;
+    opt.disabled = !route.active && !isCurrent;
+    if (isCurrent) opt.selected = true;
     select.appendChild(opt);
   });
 }

@@ -2472,14 +2472,20 @@ def add_route():
     if not sid: return jsonify({'error':'Unauthorised'}), 403
     school = School.query.get(sid)
     if not school: return jsonify({'error':'School not found'}), 404
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
+    name = sanitize(data.get('name',''))
+    if not name:
+        return jsonify({'error':'Route name required'}), 400
+    active = data.get('active', True)
+    if not isinstance(active, bool):
+        return jsonify({'error':'Active must be true or false'}), 400
     plan_limit = PLANS.get(school.plan,{}).get('routes', 4)
     current_count = Route.query.filter_by(school_id=school.id, active=True).count()
-    if current_count >= plan_limit:
+    if active and current_count >= plan_limit:
         return jsonify({'error':f'Route limit reached for {school.plan} plan ({plan_limit} max). Upgrade to add more.'}), 400
-    r = Route(school_id=school.id, name=sanitize(data.get('name','')),
+    r = Route(school_id=school.id, name=name,
               description=sanitize(data.get('description','')),
-              is_morning=data.get('is_morning', False))
+              is_morning=data.get('is_morning', False), active=active)
     db.session.add(r)
     db.session.commit()
     return jsonify({'success': True, 'id': r.id})

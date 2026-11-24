@@ -383,6 +383,46 @@ class LegitimateOperationsTests(IsolationBase):
         with app.app_context():
             self.assertIsNone(db.session.get(Driver, created_driver.json['driver_id']).assigned_route_id)
 
+    def test_admin_can_add_a_route_with_the_selected_active_state(self):
+        self.as_admin('a')
+        response = self.client.post('/api/routes', json={
+            'name': 'Alpha New Route', 'description': 'Afternoon run',
+            'is_morning': False, 'active': False})
+        self.assertEqual(response.status_code, 200)
+        route_id = response.json['id']
+        routes = {r['id']: r for r in self.client.get('/api/routes').json}
+        self.assertEqual(routes[route_id]['name'], 'Alpha New Route')
+        self.assertEqual(routes[route_id]['description'], 'Afternoon run')
+        self.assertFalse(routes[route_id]['is_morning'])
+        self.assertFalse(routes[route_id]['active'])
+
+    def test_route_creation_validates_name_and_active_flag(self):
+        self.as_admin('a')
+        for payload in ({'name': '   '}, {'name': 'Valid name', 'active': 'yes'}):
+            with self.subTest(payload=payload):
+                self.assertEqual(self.client.post('/api/routes', json=payload).status_code, 400)
+        with app.app_context():
+            self.assertEqual(Route.query.filter_by(school_id=self.a).count(), 1)
+
+    def test_active_route_limit_is_enforced_but_inactive_routes_are_allowed(self):
+        self.as_admin('a')
+        for number in range(1, 4):
+            response = self.client.post('/api/routes', json={
+                'name': f'Alpha route {number}', 'active': True})
+            self.assertEqual(response.status_code, 200)
+        blocked = self.client.post('/api/routes', json={
+            'name': 'Alpha fifth active route', 'active': True})
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn('Route limit reached', blocked.json['error'])
+        inactive = self.client.post('/api/routes', json={
+            'name': 'Alpha inactive route', 'active': False})
+        self.assertEqual(inactive.status_code, 200)
+
+    def test_non_admin_cannot_add_a_route(self):
+        self.as_parent('a')
+        self.assertEqual(self.client.post('/api/routes', json={
+            'name': 'Unauthorised route'}).status_code, 403)
+
     def test_teacher_adds_parent_on_own_route(self):
         self.as_teacher('a')
         response = self.client.post('/api/teacher/add-parent', json={
