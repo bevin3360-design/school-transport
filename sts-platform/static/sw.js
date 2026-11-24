@@ -9,5 +9,6 @@ self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (url.pathname.startsWith('/api/')) { event.respondWith(fetch(event.request).catch(() => new Response(JSON.stringify({error: 'You are offline. Please check your connection.'}), {status: 503, headers: {'Content-Type': 'application/json', 'Cache-Control': 'no-store'}}))); return; }
   if (event.request.headers.get('accept')?.includes('text/html')) { event.respondWith(fetch(event.request).then(response => { const copy = response.clone(); caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy)); return response; }).catch(() => caches.match(event.request))); return; }
+  if (url.pathname.startsWith('/static/video/')) { event.respondWith(fetch(event.request)); return; }
   event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request).then(response => { const copy = response.clone(); caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy)); return response; })));
 });
