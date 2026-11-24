@@ -116,7 +116,6 @@
   </div>
   <div class="splash-ui">
     <button class="splash-btn" id="intro-sound" type="button">Sound: off</button>
-    <button class="splash-btn" id="intro-skip" type="button">Skip to sign in</button>
   </div>
 </div>
 <div class="login-wrap">
@@ -388,7 +387,6 @@ const msgTimer = setInterval(() => {
 
 function hideSplash() {
   clearInterval(msgTimer);
-  sessionStorage.setItem('stsIntroSeen', '1');
   const splash = document.getElementById('splash');
   if (!splash) return;
   splash.classList.add('hidden');
@@ -400,14 +398,12 @@ introVideo.addEventListener('playing', () => {
   document.getElementById('splash-buffer').style.display = 'none';
 });
 introVideo.addEventListener('ended', hideSplash);
-document.getElementById('intro-skip').addEventListener('click', hideSplash);
+introVideo.addEventListener('error', hideSplash);
+introVideo.addEventListener('stalled', hideSplash);
 document.getElementById('intro-sound').addEventListener('click', (e) => {
   introVideo.muted = !introVideo.muted;
   e.currentTarget.textContent = introVideo.muted ? 'Sound: off' : 'Sound: on';
 });
-
-// Repeat visits in the same session go straight to sign-in after a moment
-if (sessionStorage.getItem('stsIntroSeen')) setTimeout(hideSplash, 2500);
 
 // Fallback — if the film cannot start within 8s, go to sign-in
 setTimeout(() => { if (introVideo.currentTime < 0.5) hideSplash(); }, 8000);
