@@ -105,7 +105,7 @@
 <!-- ══════════ SPLASH SCREEN — PROMO FILM ══════════ -->
 <div id="splash">
   <video id="intro-video" src="/static/video/promo.mp4" poster="/static/video/promo-poster.jpg"
-         muted autoplay playsinline preload="metadata"></video>
+         muted autoplay playsinline preload="auto"></video>
   <div class="splash-center" id="splash-buffer">
     <div class="loading-dots">
       <div class="dot"></div>
@@ -394,19 +394,27 @@ function hideSplash() {
 }
 
 const introVideo = document.getElementById('intro-video');
+function tryPlay() {
+  const p = introVideo.play();
+  if (p && p.catch) p.catch(() => {});
+}
+tryPlay();
+introVideo.addEventListener('canplay', tryPlay, { once: true });
+['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+  window.addEventListener(ev, tryPlay, { once: true, passive: true }));
 introVideo.addEventListener('playing', () => {
   document.getElementById('splash-buffer').style.display = 'none';
 });
 introVideo.addEventListener('ended', hideSplash);
 introVideo.addEventListener('error', hideSplash);
-introVideo.addEventListener('stalled', hideSplash);
 document.getElementById('intro-sound').addEventListener('click', (e) => {
   introVideo.muted = !introVideo.muted;
   e.currentTarget.textContent = introVideo.muted ? 'Sound: off' : 'Sound: on';
+  tryPlay();
 });
 
-// Fallback — if the film cannot start within 8s, go to sign-in
-setTimeout(() => { if (introVideo.currentTime < 0.5) hideSplash(); }, 8000);
+// Fallback — if no video data at all within 8s, go to sign-in
+setTimeout(() => { if (introVideo.readyState === 0) hideSplash(); }, 8000);
 
 // ── PWA Install Prompt ──────────────────────────────
 let deferredPrompt;
