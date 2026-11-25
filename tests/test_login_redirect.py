@@ -64,6 +64,8 @@ class LoginRedirectTests(unittest.TestCase):
                                 ('driver', 'driver_id', '/driver'),
                                 ('parent', 'parent_id', '/parent'),
                                 ('teacher', 'teacher_id', '/teacher')):
+            with self.client.session_transaction() as session:
+                session.clear()
             self.sign_in_as(key, school_id, ids[role])
             resp = self.client.get('/login')
             self.assertEqual(resp.status_code, 302, role)
@@ -79,10 +81,14 @@ class LoginRedirectTests(unittest.TestCase):
         school_id = self.build_school(trial_end=date.today() - timedelta(days=1))
         ids = self.ids(school_id)
         for role, key in (('driver', 'driver_id'), ('admin', 'school_admin_id')):
+            with self.client.session_transaction() as session:
+                session.clear()
             self.sign_in_as(key, school_id, ids[role])
             resp = self.client.get('/login')
             self.assertEqual(resp.status_code, 200, role)
             self.assertIn(b'intro-video', resp.data)
+        with self.client.session_transaction() as session:
+            session.clear()
         self.sign_in_as('driver_id', school_id, ids['driver'])
         blocked = self.client.get('/driver')
         self.assertEqual(blocked.status_code, 302)
