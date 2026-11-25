@@ -105,7 +105,7 @@
 <!-- ══════════ SPLASH SCREEN — PROMO FILM ══════════ -->
 <div id="splash">
   <video id="intro-video" src="/static/video/promo-30s.mp4" poster="/static/video/promo-poster.jpg"
-         muted autoplay playsinline preload="auto"></video>
+         autoplay playsinline preload="auto"></video>
   <div class="splash-center" id="splash-buffer">
     <div class="loading-dots">
       <div class="dot"></div>
@@ -394,22 +394,36 @@ function hideSplash() {
 }
 
 const introVideo = document.getElementById('intro-video');
+const soundBtn = document.getElementById('intro-sound');
+function syncSoundLabel() {
+  soundBtn.textContent = introVideo.muted ? 'Sound: off' : 'Sound: on';
+}
 function tryPlay() {
   const p = introVideo.play();
   if (p && p.catch) p.catch(() => {});
 }
-tryPlay();
+function startWithSound() {
+  introVideo.muted = false;
+  syncSoundLabel();
+  const p = introVideo.play();
+  if (p && p.catch) p.catch(() => { introVideo.muted = true; syncSoundLabel(); tryPlay(); });
+}
+startWithSound();
 introVideo.addEventListener('canplay', tryPlay, { once: true });
 ['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
-  window.addEventListener(ev, tryPlay, { once: true, passive: true }));
+  window.addEventListener(ev, () => {
+    introVideo.muted = false;
+    syncSoundLabel();
+    tryPlay();
+  }, { once: true, passive: true }));
 introVideo.addEventListener('playing', () => {
   document.getElementById('splash-buffer').style.display = 'none';
 });
 introVideo.addEventListener('ended', hideSplash);
 introVideo.addEventListener('error', hideSplash);
-document.getElementById('intro-sound').addEventListener('click', (e) => {
+soundBtn.addEventListener('click', (e) => {
   introVideo.muted = !introVideo.muted;
-  e.currentTarget.textContent = introVideo.muted ? 'Sound: off' : 'Sound: on';
+  syncSoundLabel();
   tryPlay();
 });
 
