@@ -2,7 +2,7 @@
   "name": "My School Transport",
   "short_name": "My Transport",
   "description": "Manage school transport routes, allocate teachers, generate rosters and track duties.",
-  "start_url": "/",
+  "start_url": "/login",
   "display": "standalone",
   "background_color": "#1a5276",
   "theme_color": "#1a5276",
@@ -25,13 +25,13 @@
     {
       "name": "Teacher Login",
       "short_name": "Teacher",
-      "url": "/",
+      "url": "/login",
       "description": "Log in as a teacher to view your duties"
     },
     {
       "name": "School Admin",
       "short_name": "Admin",
-      "url": "/",
+      "url": "/login",
       "description": "Log in as school admin"
     }
   ]

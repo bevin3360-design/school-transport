@@ -551,6 +551,12 @@ def is_super(): return session.get('super_id') is not None
 def is_school_admin(): return session.get('school_admin_id') is not None
 def current_school_id(): return session.get('school_id')
 
+def session_school_lapsed():
+    sid = session.get('school_id')
+    if not sid: return False
+    school = School.query.get(sid)
+    return bool(school and school.subscription_lapsed)
+
 SUBSCRIPTION_OPEN_PATHS = ('/', '/login', '/api/session', '/api/logout',
                            '/api/admin/login', '/api/super/login',
                            '/api/teacher/login', '/api/driver/login',
@@ -682,6 +688,12 @@ def index():
 
 @app.route('/login')
 def login_page():
+    if not session_school_lapsed():
+        if is_super(): return redirect('/super')
+        if is_school_admin(): return redirect('/admin')
+        if session.get('teacher_id'): return redirect('/teacher')
+        if session.get('driver_id'): return redirect('/driver')
+        if session.get('parent_id'): return redirect('/parent')
     return render_template('index.html')
 
 @app.route('/super')
